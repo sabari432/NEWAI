@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import Login from "./components/Login";
-import WordTrainer from "./components/WordPronunciationApp";
+import WordTrainer from "./components/WordTrainer";
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
