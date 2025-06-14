@@ -9,20 +9,42 @@ const WordTrainer = () => {
   const [timeLeft, setTimeLeft] = useState(5);
   const [gameStarted, setGameStarted] = useState(false);
   const [sentenceComplete, setSentenceComplete] = useState(false);
-  
-  const [words] = useState([
+
+  const [words, setWords] = useState([
     ['The', 'boy', 'is', 'walking', 'on', 'the', 'street', 'with', 'a', 'dog'],
     ['She', 'loves', 'to', 'read', 'books', 'in', 'the', 'library'],
     ['We', 'are', 'going', 'to', 'the', 'park', 'tomorrow']
   ]);
-  
+
   const [wordStatus, setWordStatus] = useState({});
   const [score, setScore] = useState(0);
   const [status, setStatus] = useState('Click "Start Word Test" to begin');
 
   const { transcript, resetTranscript, browserSupportsSpeechRecognition } = useSpeechRecognition();
 
-  // Timer effect
+  // ✅ NEW: Handle file upload
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const content = event.target.result;
+      const parsed = content
+        .split('\n')
+        .map(line => line.trim())
+        .filter(line => line.length > 0)
+        .map(sentence => sentence.replace(/[^\w\s]/g, '').split(' '));
+      setWords(parsed);
+      setCurrentSentence(0);
+      setCurrentWordIndex(0);
+      setSentenceComplete(false);
+      setGameStarted(false);
+      setStatus('📝 New paragraph uploaded. Click "Start Word Test" to begin');
+    };
+    reader.readAsText(file);
+  };
+
   useEffect(() => {
     let timer;
     if (isListening && timeLeft > 0) {
@@ -35,19 +57,15 @@ const WordTrainer = () => {
     return () => clearTimeout(timer);
   }, [isListening, timeLeft]);
 
-  // Speech recognition effect
   useEffect(() => {
     if (!transcript || !isListening) return;
-
     const spokenWord = transcript.trim().toLowerCase();
     const expectedWord = words[currentSentence][currentWordIndex].toLowerCase();
-
     if (spokenWord.includes(expectedWord)) {
       handleCorrectWord();
     }
   }, [transcript, isListening, currentWordIndex, currentSentence]);
 
-  // Browser support check
   useEffect(() => {
     if (!browserSupportsSpeechRecognition) {
       setStatus('❌ Your browser does not support speech recognition.');
@@ -56,7 +74,6 @@ const WordTrainer = () => {
 
   const startWordTest = () => {
     if (!browserSupportsSpeechRecognition) return;
-    
     setGameStarted(true);
     setCurrentWordIndex(0);
     setWordStatus({});
@@ -70,7 +87,6 @@ const WordTrainer = () => {
       completeSentence();
       return;
     }
-
     const currentWord = words[currentSentence][currentWordIndex];
     setStatus(`🎤 Say the word: "${currentWord}"`);
     setIsListening(true);
@@ -84,10 +100,8 @@ const WordTrainer = () => {
     setWordStatus(prev => ({ ...prev, [wordKey]: 'correct' }));
     setScore(prev => prev + 1);
     setStatus('✅ Correct! Moving to next word...');
-    
     SpeechRecognition.stopListening();
     setIsListening(false);
-    
     setTimeout(() => {
       setCurrentWordIndex(prev => prev + 1);
       setTimeout(startListeningToWord, 500);
@@ -98,10 +112,8 @@ const WordTrainer = () => {
     const wordKey = `${currentSentence}-${currentWordIndex}`;
     setWordStatus(prev => ({ ...prev, [wordKey]: 'incorrect' }));
     setStatus('❌ Time up or incorrect! Moving to next word...');
-    
     SpeechRecognition.stopListening();
     setIsListening(false);
-    
     setTimeout(() => {
       setCurrentWordIndex(prev => prev + 1);
       setTimeout(startListeningToWord, 500);
@@ -109,15 +121,19 @@ const WordTrainer = () => {
   };
 
   const completeSentence = () => {
-    setSentenceComplete(true);
-    setGameStarted(false);
-    setIsListening(false);
-    SpeechRecognition.stopListening();
-    
-    const totalWords = words[currentSentence].length;
-    const percentage = Math.round((score / totalWords) * 100);
-    setStatus(`🎉 Sentence completed! Your score: ${score}/${totalWords} (${percentage}%)`);
-  };
+  setSentenceComplete(true);
+  setGameStarted(false);
+  setIsListening(false);
+  SpeechRecognition.stopListening();
+
+  const totalWords = words[currentSentence].length;
+  const rawScore = score;
+  const maxDisplayScore = 10;
+  const scaledScore = ((rawScore / totalWords) * maxDisplayScore).toFixed(1); // keep one decimal
+
+  setStatus(`🎉 Sentence completed! Your score: ${scaledScore}/${maxDisplayScore}`);
+};
+
 
   const nextSentence = () => {
     if (currentSentence < words.length - 1) {
@@ -136,9 +152,7 @@ const WordTrainer = () => {
   const getWordClassName = (sentenceIndex, wordIndex) => {
     const wordKey = `${sentenceIndex}-${wordIndex}`;
     const status = wordStatus[wordKey];
-    
     let baseClass = 'word-box';
-    
     if (gameStarted && sentenceIndex === currentSentence && wordIndex === currentWordIndex && isListening) {
       baseClass += ' active';
     } else if (status === 'correct') {
@@ -146,12 +160,17 @@ const WordTrainer = () => {
     } else if (status === 'incorrect') {
       baseClass += ' incorrect';
     }
-    
     return baseClass;
   };
 
   return (
     <div className="word-trainer-container">
+      {/* ✅ NEW: Upload button */}
+      <div style={{ padding: '10px' }}>
+        <label style={{ fontWeight: 'bold' }}>📤 Upload Paragraph File (txt): </label>
+        <input type="file" accept=".txt" onChange={handleFileUpload} />
+      </div>
+
       {/* Left Sidebar */}
       <div className="sidebar left-sidebar">
         <div className="sidebar-decoration">
@@ -249,7 +268,9 @@ const WordTrainer = () => {
                 <div className="results-stats">
                   <div className="stat-item">
                     <span className="stat-label">Score</span>
-                    <span className="stat-value">{score} / {words[currentSentence].length}</span>
+                   <span className="stat-value">
+                    {(score / words[currentSentence].length * 10).toFixed(1)} / 10
+                  </span>
                   </div>
                   <div className="stat-item">
                     <span className="stat-label">Accuracy</span>
