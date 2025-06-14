@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 import './WordTrainer.css';
 
 const WordTrainer = () => {
@@ -9,6 +8,11 @@ const WordTrainer = () => {
   const [timeLeft, setTimeLeft] = useState(5);
   const [gameStarted, setGameStarted] = useState(false);
   const [sentenceComplete, setSentenceComplete] = useState(false);
+  
+  // ✅ NEW: State for speech recognition
+  const [recognition, setRecognition] = useState(null);
+  const [transcript, setTranscript] = useState('');
+  const [browserSupported, setBrowserSupported] = useState(false);
 
   const [words, setWords] = useState([
     ['The', 'boy', 'is', 'walking', 'on', 'the', 'street', 'with', 'a', 'dog'],
@@ -18,11 +22,71 @@ const WordTrainer = () => {
 
   const [wordStatus, setWordStatus] = useState({});
   const [score, setScore] = useState(0);
-  const [status, setStatus] = useState('Click "Start Word Test" to begin');
+  const [status, setStatus] = useState('Checking browser compatibility...');
 
-  const { transcript, resetTranscript, browserSupportsSpeechRecognition } = useSpeechRecognition();
+  // ✅ Initialize speech recognition on client side only
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      
+      if (SpeechRecognition) {
+        const recognitionInstance = new SpeechRecognition();
+        recognitionInstance.continuous = false; // ✅ Changed to false - restart manually
+        recognitionInstance.interimResults = true;
+        recognitionInstance.lang = 'en-US';
+        recognitionInstance.maxAlternatives = 1;
+        
+        recognitionInstance.onresult = (event) => {
+          let finalTranscript = '';
+          let interimTranscript = '';
+          
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript;
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+          
+          const fullTranscript = finalTranscript || interimTranscript;
+          setTranscript(fullTranscript);
+          console.log('Speech result:', fullTranscript); // ✅ Debug log
+        };
+        
+        recognitionInstance.onerror = (event) => {
+          console.error('Speech recognition error:', event.error);
+          if (event.error === 'no-speech') {
+            setStatus('❌ No speech detected. Try speaking louder.');
+          } else if (event.error === 'network') {
+            setStatus('❌ Network error. Check your connection.');
+          } else {
+            setStatus(`❌ Speech recognition error: ${event.error}`);
+          }
+          setIsListening(false);
+        };
+        
+        recognitionInstance.onend = () => {
+          console.log('Recognition ended'); // ✅ Debug log
+          // Don't automatically set isListening to false here
+          // Let the timer or word detection handle it
+        };
+        
+        recognitionInstance.onstart = () => {
+          console.log('Recognition started'); // ✅ Debug log
+        };
+        
+        setRecognition(recognitionInstance);
+        setBrowserSupported(true);
+        setStatus('Click "Start Word Test" to begin');
+      } else {
+        setBrowserSupported(false);
+        setStatus('❌ Your browser does not support speech recognition. Please use Chrome, Edge, or Safari.');
+      }
+    }
+  }, []);
 
-  // ✅ NEW: Handle file upload
+  // ✅ Handle file upload
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -59,98 +123,134 @@ const WordTrainer = () => {
 
   useEffect(() => {
     if (!transcript || !isListening) return;
+    
     const spokenWord = transcript.trim().toLowerCase();
     const expectedWord = words[currentSentence][currentWordIndex].toLowerCase();
-    if (spokenWord.includes(expectedWord)) {
+    
+    console.log('Comparing:', spokenWord, 'vs', expectedWord); // ✅ Debug log
+    
+    // ✅ More flexible matching
+    if (spokenWord.includes(expectedWord) || 
+        expectedWord.includes(spokenWord) ||
+        spokenWord === expectedWord) {
       handleCorrectWord();
     }
   }, [transcript, isListening, currentWordIndex, currentSentence]);
 
-  useEffect(() => {
-    if (!browserSupportsSpeechRecognition) {
-      setStatus('❌ Your browser does not support speech recognition.');
+  const startWordTest = async () => {
+    if (!browserSupported || !recognition) {
+      setStatus('❌ Speech recognition not available');
+      return;
     }
-  }, [browserSupportsSpeechRecognition]);
 
- const startWordTest = () => {
-  if (!browserSupportsSpeechRecognition) return;
-
-  navigator.mediaDevices.getUserMedia({ audio: true })
-    .then((stream) => {
-      stream.getTracks().forEach(track => track.stop()); // Release dummy mic stream
+    try {
+      // ✅ Request microphone permission explicitly
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach(track => track.stop()); // Release the stream
+      
       setGameStarted(true);
       setCurrentWordIndex(0);
       setWordStatus({});
       setScore(0);
       setSentenceComplete(false);
-      startListeningToWord(); // ✅ Must be called inside the .then()
-    })
-    .catch(() => {
-      setStatus('❌ Mic access blocked. Please enable it in browser settings.');
-    });
-};
-
+      startListeningToWord();
+    } catch (error) {
+      console.error('Microphone access error:', error);
+      setStatus('❌ Microphone access denied. Please allow microphone access and refresh the page.');
+    }
+  };
 
   const startListeningToWord = () => {
-  if (currentWordIndex >= words[currentSentence].length) {
-    completeSentence();
-    return;
-  }
+    if (currentWordIndex >= words[currentSentence].length) {
+      completeSentence();
+      return;
+    }
 
-  const currentWord = words[currentSentence][currentWordIndex];
-  setStatus(`🎤 Say the word: "${currentWord}"`);
-  setIsListening(true);
-  setTimeLeft(5);
-  resetTranscript();
+    const currentWord = words[currentSentence][currentWordIndex];
+    setStatus(`🎤 Say the word: "${currentWord}"`);
+    setIsListening(true);
+    setTimeLeft(5);
+    setTranscript('');
 
-  // ✅ Start recognition directly
-  SpeechRecognition.startListening({
-    continuous: true,
-    language: 'en-US',        // ✅ Correct
-    interimResults: true, // or 'en-US' if needed
-  });
-};
-
+    // ✅ Start recognition with better error handling and restart logic
+    if (recognition) {
+      try {
+        recognition.stop(); // Stop any previous recognition
+        setTimeout(() => {
+          try {
+            recognition.start();
+            console.log('Started listening for:', currentWord); // ✅ Debug log
+          } catch (error) {
+            console.error('Failed to start recognition:', error);
+            setStatus('❌ Failed to start speech recognition');
+            setIsListening(false);
+          }
+        }, 100); // Small delay to ensure stop completes
+      } catch (error) {
+        console.error('Error stopping recognition:', error);
+      }
+    }
+  };
 
   const handleCorrectWord = () => {
     const wordKey = `${currentSentence}-${currentWordIndex}`;
     setWordStatus(prev => ({ ...prev, [wordKey]: 'correct' }));
     setScore(prev => prev + 1);
     setStatus('✅ Correct! Moving to next word...');
-    SpeechRecognition.stopListening();
+    
+    // ✅ Properly stop recognition
+    if (recognition && isListening) {
+      try {
+        recognition.stop();
+      } catch (error) {
+        console.error('Error stopping recognition:', error);
+      }
+    }
     setIsListening(false);
+    
     setTimeout(() => {
       setCurrentWordIndex(prev => prev + 1);
-      setTimeout(startListeningToWord, 500);
-    }, 1000);
+      setTimeout(startListeningToWord, 800); // ✅ Longer delay for stability
+    }, 1200);
   };
 
   const handleIncorrectWord = () => {
     const wordKey = `${currentSentence}-${currentWordIndex}`;
     setWordStatus(prev => ({ ...prev, [wordKey]: 'incorrect' }));
     setStatus('❌ Time up or incorrect! Moving to next word...');
-    SpeechRecognition.stopListening();
+    
+    // ✅ Properly stop recognition
+    if (recognition && isListening) {
+      try {
+        recognition.stop();
+      } catch (error) {
+        console.error('Error stopping recognition:', error);
+      }
+    }
     setIsListening(false);
+    
     setTimeout(() => {
       setCurrentWordIndex(prev => prev + 1);
-      setTimeout(startListeningToWord, 500);
-    }, 1000);
+      setTimeout(startListeningToWord, 800); // ✅ Longer delay for stability
+    }, 1200);
   };
 
   const completeSentence = () => {
-  setSentenceComplete(true);
-  setGameStarted(false);
-  setIsListening(false);
-  SpeechRecognition.stopListening();
+    setSentenceComplete(true);
+    setGameStarted(false);
+    setIsListening(false);
+    
+    if (recognition) {
+      recognition.stop();
+    }
 
-  const totalWords = words[currentSentence].length;
-  const rawScore = score;
-  const maxDisplayScore = 10;
-  const scaledScore = ((rawScore / totalWords) * maxDisplayScore).toFixed(1); // keep one decimal
+    const totalWords = words[currentSentence].length;
+    const rawScore = score;
+    const maxDisplayScore = 10;
+    const scaledScore = ((rawScore / totalWords) * maxDisplayScore).toFixed(1);
 
-  setStatus(`🎉 Sentence completed! Your score: ${scaledScore}/${maxDisplayScore}`);
-};
-
+    setStatus(`🎉 Sentence completed! Your score: ${scaledScore}/${maxDisplayScore}`);
+  };
 
   const nextSentence = () => {
     if (currentSentence < words.length - 1) {
@@ -182,7 +282,27 @@ const WordTrainer = () => {
 
   return (
     <div className="word-trainer-container">
-      {/* ✅ NEW: Upload button */}
+      {/* Browser compatibility warning */}
+      {!browserSupported && (
+        <div style={{ 
+          backgroundColor: '#fee2e2', 
+          border: '1px solid #fecaca', 
+          padding: '16px', 
+          margin: '10px',
+          borderRadius: '8px',
+          color: '#dc2626'
+        }}>
+          <strong>⚠️ Browser Not Supported</strong>
+          <p>This app requires speech recognition. Please use:</p>
+          <ul>
+            <li>Google Chrome (recommended)</li>
+            <li>Microsoft Edge</li>
+            <li>Safari (latest version)</li>
+          </ul>
+        </div>
+      )}
+
+      {/* Upload button */}
       <div style={{ padding: '10px' }}>
         <label style={{ fontWeight: 'bold' }}>📤 Upload Paragraph File (txt): </label>
         <input type="file" accept=".txt" onChange={handleFileUpload} />
@@ -269,7 +389,7 @@ const WordTrainer = () => {
             <button 
               onClick={startWordTest}
               className="btn-primary"
-              disabled={!browserSupportsSpeechRecognition}
+              disabled={!browserSupported}
             >
               <span className="btn-icon">🚀</span>
               Start Word Test
@@ -288,7 +408,6 @@ const WordTrainer = () => {
                    <span className="stat-value">
                     {(score / words[currentSentence].length * 10).toFixed(1)} / 10
                   </span>
-
                   </div>
                   <div className="stat-item">
                     <span className="stat-label">Accuracy</span>
