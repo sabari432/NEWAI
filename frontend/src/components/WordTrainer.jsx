@@ -72,28 +72,45 @@ const WordTrainer = () => {
     }
   }, [browserSupportsSpeechRecognition]);
 
-  const startWordTest = () => {
-    if (!browserSupportsSpeechRecognition) return;
-    setGameStarted(true);
-    setCurrentWordIndex(0);
-    setWordStatus({});
-    setScore(0);
-    setSentenceComplete(false);
-    startListeningToWord();
-  };
+ const startWordTest = () => {
+  if (!browserSupportsSpeechRecognition) return;
+
+  navigator.mediaDevices.getUserMedia({ audio: true })
+    .then((stream) => {
+      stream.getTracks().forEach(track => track.stop()); // Release dummy mic stream
+      setGameStarted(true);
+      setCurrentWordIndex(0);
+      setWordStatus({});
+      setScore(0);
+      setSentenceComplete(false);
+      startListeningToWord(); // ✅ Must be called inside the .then()
+    })
+    .catch(() => {
+      setStatus('❌ Mic access blocked. Please enable it in browser settings.');
+    });
+};
+
 
   const startListeningToWord = () => {
-    if (currentWordIndex >= words[currentSentence].length) {
-      completeSentence();
-      return;
-    }
-    const currentWord = words[currentSentence][currentWordIndex];
-    setStatus(`🎤 Say the word: "${currentWord}"`);
-    setIsListening(true);
-    setTimeLeft(5);
-    resetTranscript();
-    SpeechRecognition.startListening({ continuous: true, language: 'en-US' });
-  };
+  if (currentWordIndex >= words[currentSentence].length) {
+    completeSentence();
+    return;
+  }
+
+  const currentWord = words[currentSentence][currentWordIndex];
+  setStatus(`🎤 Say the word: "${currentWord}"`);
+  setIsListening(true);
+  setTimeLeft(5);
+  resetTranscript();
+
+  // ✅ Start recognition directly
+  SpeechRecognition.startListening({
+    continuous: true,
+    interimResults: false,
+    language: 'en-IN', // or 'en-US' if needed
+  });
+};
+
 
   const handleCorrectWord = () => {
     const wordKey = `${currentSentence}-${currentWordIndex}`;
@@ -271,6 +288,7 @@ const WordTrainer = () => {
                    <span className="stat-value">
                     {(score / words[currentSentence].length * 10).toFixed(1)} / 10
                   </span>
+
                   </div>
                   <div className="stat-item">
                     <span className="stat-label">Accuracy</span>
