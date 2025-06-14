@@ -106,8 +106,8 @@ const WordTrainer = () => {
   // ✅ Start recognition directly
   SpeechRecognition.startListening({
     continuous: true,
-    interimResults: false,
-    language: 'en-IN', // or 'en-US' if needed
+    language: 'en-US',        // ✅ Correct
+    interimResults: true, // or 'en-US' if needed
   });
 };
 
