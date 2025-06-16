@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🎤 Speech Validator</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+      min-height: 100vh;
+      margin: 0;
+      padding: 0;
+    }
+    
+    .main-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      min-height: 100vh;
+    }
+    
+    .header-section {
+      background: linear-gradient(135deg, #212529 0%, #343a40 100%);
+      color: white;
+      padding: 2rem;
+      border-radius: 15px;
+      margin-bottom: 2rem;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .header-section::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: linear-gradient(45deg, transparent 49%, rgba(255,255,255,0.03) 50%, transparent 51%);
+    }
+    
+    .header-section h1 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      position: relative;
+      z-index: 2;
+    }
+    
+    .logout-btn {
+      position: absolute;
+      top: 1rem;
+      right: 1rem;
+      z-index: 3;
+      background: rgba(220, 53, 69, 0.9);
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      color: white;
+      font-weight: 500;
+      transition: all 0.3s ease;
+    }
+    
+    .logout-btn:hover {
+      background: #dc3545;
+      transform: translateY(-2px);
+    }
+    
+    .content-card {
+      background: white;
+      border-radius: 15px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+      box-shadow: 0 5px 25px rgba(0,0,0,0.08);
+      border: 1px solid #e9ecef;
+    }
+    
+    .current-word-display {
+      background: linear-gradient(135deg, #495057 0%, #343a40 100%);
+      color: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      font-size: 1.2rem;
+      font-weight: 600;
+      text-align: center;
+      margin-bottom: 2rem;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+      border: none;
+    }
+    
+    .sentence-container {
+      background: #f8f9fa;
+      padding: 2rem;
+      border-radius: 12px;
+      margin-bottom: 2rem;
+      border: 2px solid #e9ecef;
+      min-height: 100px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .word {
+      padding: 12px 18px;
+      margin: 5px;
+      border-radius: 8px;
+      display: inline-block;
+      font-size: 1.1rem;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      border: 2px solid transparent;
+      cursor: default;
+      user-select: none;
+    }
+    
+    .word.bg-secondary {
+      background: #6c757d !important;
+      color: white;
+      border-color: #5a6268;
+    }
+    
+    .correct { 
+      background: #d4edda !important; 
+      color: #155724 !important; 
+      border-color: #c3e6cb !important;
+      animation: correctPulse 0.6s ease;
+    }
+    
+    .incorrect { 
+      background: #f8d7da !important; 
+      color: #721c24 !important; 
+      border-color: #f5c6cb !important;
+      animation: incorrectShake 0.6s ease;
+    }
+    
+    .highlight { 
+      border: 3px solid #212529 !important; 
+      background: #fff3cd !important;
+      color: #856404 !important;
+      transform: scale(1.05);
+      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+      animation: highlightPulse 1s infinite alternate;
+    }
+    
+    @keyframes correctPulse {
+      0% { transform: scale(1); }
+      50% { transform: scale(1.1); }
+      100% { transform: scale(1); }
+    }
+    
+    @keyframes incorrectShake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-5px); }
+      75% { transform: translateX(5px); }
+    }
+    
+    @keyframes highlightPulse {
+      from { box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+      to { box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
+    }
+    
+    .control-section {
+      text-align: center;
+      margin-bottom: 2rem;
+    }
+    
+    .start-btn {
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+      border: none;
+      padding: 1rem 2.5rem;
+      font-size: 1.2rem;
+      font-weight: 600;
+      border-radius: 12px;
+      color: white;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+      margin-bottom: 1.5rem;
+      min-width: 200px;
+    }
+    
+    .start-btn:hover:not(:disabled) {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 25px rgba(40, 167, 69, 0.4);
+    }
+    
+    .start-btn:disabled {
+      background: #6c757d;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    
+    .file-input-container {
+      background: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      border: 2px dashed #dee2e6;
+      transition: all 0.3s ease;
+      margin-bottom: 2rem;
+    }
+    
+    .file-input-container:hover {
+      border-color: #495057;
+      background: #f8f9fa;
+    }
+    
+    .file-input {
+      width: 100%;
+      max-width: 400px;
+      padding: 0.75rem;
+      border: 1px solid #ced4da;
+      border-radius: 8px;
+      background: white;
+      font-size: 1rem;
+    }
+    
+    .score-display {
+      background: linear-gradient(135deg, #343a40 0%, #495057 100%);
+      color: white;
+      padding: 1.5rem;
+      border-radius: 12px;
+      font-size: 1.4rem;
+      font-weight: 700;
+      text-align: center;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+      margin-top: 2rem;
+    }
+    
+    .next-btn {
+      background: linear-gradient(135deg, #fd7e14 0%, #e55a4f 100%);
+      border: none;
+      padding: 1rem 2rem;
+      font-size: 1.1rem;
+      font-weight: 600;
+      border-radius: 12px;
+      color: white;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(253, 126, 20, 0.3);
+      margin-top: 1rem;
+    }
+    
+    .next-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(253, 126, 20, 0.4);
+    }
+    
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      .main-container {
+        padding: 15px;
+      }
+      
+      .header-section {
+        padding: 1.5rem 1rem;
+      }
+      
+      .header-section h1 {
+        font-size: 2rem;
+      }
+      
+      .logout-btn {
+        position: static;
+        margin-top: 1rem;
+        display: block;
+        width: fit-content;
+        margin-left: auto;
+        margin-right: auto;
+      }
+      
+      .content-card {
+        padding: 1.5rem;
+      }
+      
+      .sentence-container {
+        padding: 1.5rem;
+      }
+      
+      .word {
+        font-size: 1rem;
+        padding: 10px 14px;
+        margin: 3px;
+      }
+      
+      .start-btn {
+        padding: 0.9rem 2rem;
+        font-size: 1.1rem;
+      }
+      
+      .file-input {
+        max-width: 100%;
+      }
+    }
+    
+    @media (max-width: 480px) {
+      .header-section h1 {
+        font-size: 1.7rem;
+      }
+      
+      .word {
+        font-size: 0.9rem;
+        padding: 8px 12px;
+      }
+      
+      .start-btn {
+        padding: 0.8rem 1.5rem;
+        font-size: 1rem;
+        min-width: 180px;
+      }
+      
+      .current-word-display {
+        font-size: 1.1rem;
+        padding: 1.2rem;
+      }
+    }
+    
+    /* Dark mode elements */
+    .text-success {
+      color: #28a745 !important;
+    }
+    
+    /* Loading animation */
+    .loading {
+      position: relative;
+    }
+    
+    .loading::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 20px;
+      height: 20px;
+      margin: -10px 0 0 -10px;
+      border: 2px solid transparent;
+      border-top: 2px solid #fff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="main-container">
+    <div class="header-section">
+      <a href="/logout" class="logout-btn">🚪 Logout</a>
+      <h1>🗣️ Speech Word Validator</h1>
+      <p>Professional speech recognition training tool</p>
+    </div>
+
+    <div class="content-card">
+      <div class="current-word-display" id="currentWord">Click "Start Speaking" to begin.</div>
+
+      <div class="sentence-container" id="sentence"></div>
+
+      <div class="control-section">
+        <button id="startBtn" class="start-btn" onclick="startProcess()">🎤 Start Speaking</button>
+        
+        <div class="file-input-container">
+          <label for="fileInput" style="display: block; margin-bottom: 0.5rem; font-weight: 600; color: #495057;">
+            📄 Upload Custom Text File (Optional)
+          </label>
+          <input type="file" id="fileInput" accept=".txt" class="file-input">
+        </div>
+      </div>
+
+      <div id="score" class="score-display" style="display: none;"></div>
+    </div>
+  </div>
+
+  <script>
+    const sentences = [
+      "Other people try to learn English",
+      "I love playing with my friends",
+      "Practice make a man perfect"
+    ];
+
+    let currentSentenceIndex = 0;
+    let words = sentences[currentSentenceIndex].split(" ");
+    const sentenceContainer = document.getElementById("sentence");
+    const scoreContainer = document.getElementById("score");
+    const currentWordDisplay = document.getElementById("currentWord");
+    const startBtn = document.getElementById("startBtn");
+    let score = 0;
+
+    function renderSentence() {
+      sentenceContainer.innerHTML = "";
+      words.forEach((word, index) => {
+        const span = document.createElement("span");
+        span.textContent = word;
+        span.className = "word badge bg-secondary";
+        span.id = "word-" + index;
+        sentenceContainer.appendChild(span);
+      });
+    }
+
+    renderSentence();
+
+    document.getElementById("fileInput").addEventListener("change", (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const text = e.target.result;
+        words = text.trim().split(/\s+/);
+        renderSentence();
+      };
+      reader.readAsText(file);
+    });
+
+    async function startProcess() {
+      startBtn.disabled = true;
+      score = 0;
+      scoreContainer.style.display = "none";
+
+      for (let i = 0; i < words.length; i++) {
+        await handleWord(i);
+      }
+
+      currentWordDisplay.textContent = "✅ Sentence Completed!";
+      scoreContainer.innerHTML = `🎯 Your Score: <span class="text-success">${Math.round((score / words.length) * 10)}/10</span>`;
+      scoreContainer.style.display = "block";
+
+      const nextBtn = document.createElement("button");
+      nextBtn.id = "nextBtn";
+      nextBtn.className = "next-btn";
+      nextBtn.innerText = "➡️ Next Sentence";
+      nextBtn.onclick = nextSentence;
+      document.querySelector(".control-section").appendChild(nextBtn);
+
+      startBtn.disabled = false;
+    }
+
+    function nextSentence() {
+      currentSentenceIndex++;
+      const nextBtn = document.getElementById("nextBtn");
+      nextBtn?.remove();
+
+      if (currentSentenceIndex >= sentences.length) {
+        currentWordDisplay.textContent = "🎉 All sentences completed!";
+        return;
+      }
+
+      words = sentences[currentSentenceIndex].split(" ");
+      renderSentence();
+      scoreContainer.style.display = "none";
+      currentWordDisplay.textContent = "Click \"Start Speaking\" to begin.";
+    }
+
+    async function handleWord(index) {
+      return new Promise(async (resolve) => {
+        const spans = document.querySelectorAll(".word");
+        spans.forEach(s => s.classList.remove("highlight"));
+
+        const currentSpan = document.getElementById(`word-${index}`);
+        currentSpan.classList.add("highlight");
+        currentWordDisplay.innerHTML = `🗣️ Speak the word: <strong>${words[index]}</strong>`;
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        const mediaRecorder = new MediaRecorder(stream);
+        let chunks = [];
+
+        mediaRecorder.ondataavailable = e => chunks.push(e.data);
+
+        mediaRecorder.onstop = async () => {
+          const blob = new Blob(chunks, { type: "audio/webm" });
+          const formData = new FormData();
+          formData.append("audio", blob, "word.webm");
+
+          try {
+            const res = await fetch(`/transcribe?expected=${words[index]}`, {
+              method: "POST",
+              body: formData
+            });
+
+            const data = await res.json();
+            console.log("🔍 Server Response:", data);
+
+            currentSpan.classList.remove("highlight");
+            currentSpan.classList.add(data.status);
+
+            if (data.status === "correct") score++;
+          } catch (err) {
+            console.error("❌ Error:", err);
+            currentSpan.classList.remove("highlight");
+            currentSpan.classList.add("incorrect");
+          }
+
+          setTimeout(() => {
+            startBtn.textContent = "🎤 Start Speaking";
+            resolve();
+          }, 800);
+        };
+
+        mediaRecorder.start();
+        startBtn.textContent = "⏹️ Stop";
+
+        setTimeout(() => {
+          mediaRecorder.stop();
+          stream.getTracks().forEach(track => track.stop());
+        }, 3000);
+      });
+    }
+  </script>
+</body>
+</html>

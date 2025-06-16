@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: speech-validator
+    env: python
+    buildCommand: ""
+    startCommand: python backend.py
+    region: oregon
