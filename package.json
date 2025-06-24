@@ -13,6 +13,7 @@
     "react-native-permissions": "^5.4.1",
     "react-scripts": "5.0.1",
     "react-speech-recognition": "^4.0.1",
+    "tesseract.js": "^6.0.1",
     "web-vitals": "^2.1.4"
   },
   "scripts": {

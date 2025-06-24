@@ -1,5 +1,7 @@
-import React, { useEffect } from "react";
-
+import React, { useEffect, useState } from "react";
+import { Star, Trophy, BookOpen, Mic, Calendar, Zap, Award, Target, Play, Volume2 } from "lucide-react";
+import ImageUpload from './image.js';
+import ReadMyBook from './readbook.js';
 // Mock IncorrectWordHandler for demo
 const IncorrectWordHandler = class {
   init(words, callback) {
@@ -12,760 +14,1086 @@ const IncorrectWordHandler = class {
 };
 
 function App() {
+  const [currentView, setCurrentView] = useState('dashboard');
+  const [userStats, setUserStats] = useState({
+    level: 2,
+    totalStars: 45,
+    currentStreak: 5,
+    accuracy: 85,
+    totalDays: 12
+  });
+
+  // Speech recognition state
+  const [speechState, setSpeechState] = useState({
+    currentLevel: 'L1',
+    sentenceIndex: 0,
+    words: [],
+    currentWordIndex: 0,
+    results: [],
+    recognizing: false,
+    canValidate: false,
+    score: '',
+    errorMessage: ''
+  });
+const [bookText, setBookText] = useState('');
+const [extractedText, setExtractedText] = useState('');
+
+// Add this function to handle text extraction from ImageUpload
+const handleTextExtracted = (text) => {
+  setExtractedText(text);
+  setBookText(text);
+  setCurrentView('readbook');
+};
+
+// Add this function to handle back navigation
+const handleBackToImageUpload = () => {
+  setCurrentView('imageupload');
+};
+
+const handleBackToDashboard = () => {
+  setCurrentView('dashboard');
+};
   useEffect(() => {
+    if (currentView === 'practice') {
+      initializeSpeechRecognition();
+    }
+  }, [currentView]);
+
+  const initializeSpeechRecognition = () => {
     const sentences = [
-      "Many children play cricket in an empty ground after finishing homework",
+      "children play cricket in an empty ground after finishing homework",
+      ,
     ];
 
-    // Optimized 3-level system with mobile-friendly settings
     const levels = {
-      L1: { name: "Beginner", delay: 500, nextWordDelay: 800 }, // Much faster for mobile
-      L2: { name: "Advance", delay: 300, nextWordDelay: 500 },
+      L1: { name: "Beginner", delay: 500, nextWordDelay: 80 },
+      L2: { name: "Advance", delay: 300, nextWordDelay: 10 },
       L3: { name: "Expert", delay: 300, nextWordDelay: 1, fullSentence: true }
     };
 
-    let incorrectHandler = null;
-    let currentLevel = 'L1';
-    let sentenceIndex = 0,
-      words = [],
-      currentWordIndex = 0,
-      results = [];
-    let recognition,
-      recognizing = false,
-      canValidate = false,
-      startTime = 0,
-      restartTimeout = null,
-      isCapacitor = false,
-      speechRecognition = null,
-      autoRestartEnabled = false;
-
+    let recognition = null;
+    let autoRestartEnabled = false;
+    let canValidate = false;
+    let wordTimeout = null;
     const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
-    
-    // Check if running in Capacitor
-    const checkCapacitor = () => {
-      return !!(window.Capacitor || window.capacitor);
-    };
 
-    const wordsDiv = document.getElementById("words");
-    const scoreDiv = document.getElementById("score");
-    const nextBtn = document.getElementById("next_button");
-    const startBtn = document.getElementById("start_button");
-    const errorDiv = document.getElementById("errorMessage");
-    const levelSelect = document.getElementById("levelSelect");
-    const levelInfo = document.getElementById("levelInfo");
-
-    function updateLevelInfo() {
-      const levelName = levels[currentLevel].name;
-      if (currentLevel === 'L3') {
-        levelInfo.textContent = `Level: ${levelName} (Full Sentence Mode)`;
-      } else {
-        const speed = `${levels[currentLevel].delay / 1000}s per word`;
-        levelInfo.textContent = `Level: ${levelName} (${speed})`;
-      }
+   const initWords = () => {
+  const words = sentences[speechState.sentenceIndex].split(" ");
+  const results = Array(words.length).fill(null);
+  let currentWordIndex = 0;
+  
+  // Mark words with 2 or fewer letters as correct and find first word > 2 letters
+  words.forEach((word, index) => {
+    if (word.length <= 2) {
+      results[index] = "correct";
     }
-
-    function initWords() {
-      words = sentences[sentenceIndex].split(" ");
-      results = Array(words.length).fill(null);
-      currentWordIndex = 0;
-      
-      // Auto-mark words with 2 letters or fewer as correct
-      words.forEach((word, index) => {
-        if (word.length <= 2 ) {
-          results[index] = "correct";
-        }
-      });
-      
-      // Find first word that needs validation (more than 2 letters)
-      currentWordIndex = words.findIndex((word, index) => word.length > 2 && results[index] === null);
-      if (currentWordIndex === -1) {
-        // All words are 2 letters or fewer, complete the sentence
-        currentWordIndex = words.length;
-      }
-      
-      renderWords();
-    }
-
-    function renderWords() {
-      wordsDiv.innerHTML = "";
-      words.forEach((word, i) => {
-        const span = document.createElement("span");
-        span.textContent = word;
-        span.className = "word";
-        if (results[i] === "correct") span.classList.add("correct");
-        else if (results[i] === "wrong") span.classList.add("wrong");
-        else if (currentLevel === 'L3' && recognizing) span.classList.add("sentence-highlight");
-        else if (i === currentWordIndex) span.classList.add("highlight");
-        wordsDiv.appendChild(span);
-      });
-    }
-
-    function showError(msg) {
-      errorDiv.textContent = msg;
-      errorDiv.style.display = "block";
-      setTimeout(() => {
-        errorDiv.style.display = "none";
-      }, 4000);
-    }
-
-    function resetUI() {
-      recognizing = false;
-      autoRestartEnabled = false;
-      startBtn.textContent = "🎤 Start";
-      startBtn.className = "";
-      canValidate = false;
-      if (restartTimeout) {
-        clearTimeout(restartTimeout);
-        restartTimeout = null;
-      }
-    }
-
-    async function stopRecognition() {
-      autoRestartEnabled = false;
-      if (recognizing) {
-        try {
-          if (isCapacitor && speechRecognition) {
-            await speechRecognition.stop();
-          } else if (recognition) {
-            recognition.abort();
-          }
-        } catch (e) {
-          console.log("Error stopping recognition:", e);
-        }
-      }
-      resetUI();
-    }
-
-    // Mobile-optimized continuous speech recognition
-    async function startMobileSpeechRecognition() {
-      if (!recognition) {
-        showError("Speech recognition not supported.");
-        return false;
-      }
-      
-      try {
-        if (currentWordIndex === 0) {
-          initWords();
-        }
-        
-        errorDiv.style.display = "none";
-        
-        if (restartTimeout) {
-          clearTimeout(restartTimeout);
-          restartTimeout = null;
-        }
-
-        // Mobile-optimized settings for continuous recognition
-        recognition.continuous = true; // Enable continuous for mobile too
-        recognition.interimResults = false; // Keep false for stability
-        recognition.maxAlternatives = 1;
-        recognition.lang = "en-US";
-
-        recognizing = true;
-        autoRestartEnabled = true; // Enable auto-restart for mobile
-        startTime = Date.now();
-        canValidate = true; // Enable validation quickly for mobile
-        
-        startBtn.textContent = "🛑 Stop";
-        startBtn.className = "stop-btn";
-        
-        if (currentLevel === 'L3') {
-          scoreDiv.textContent = `🎤 Read the full sentence: "${sentences[sentenceIndex]}"`;
-          renderWords();
-        } else {
-          scoreDiv.textContent = `🎤 Say: "${words[currentWordIndex]}"`;
-        }
-        
-        recognition.start();
-        
-        return true;
-      } catch (e) {
-        showError("Failed to start: " + e.message);
-        resetUI();
-        return false;
-      }
-    }
-
-    window.toggleRecognition = async function () {
-      if (recognizing) {
-        await stopRecognition();
-        return;
-      }
-
-      if (isMobile) {
-        await startMobileSpeechRecognition();
-      } else {
-        startDesktopRecognition();
-      }
-    };
-
-    function startDesktopRecognition() {
-      try {
-        if (currentWordIndex === 0) {
-          initWords();
-        }
-        
-        errorDiv.style.display = "none";
-        
-        if (restartTimeout) {
-          clearTimeout(restartTimeout);
-          restartTimeout = null;
-        }
-
-        // Desktop settings
-        recognition.continuous = true;
-        recognition.interimResults = currentLevel === 'L3';
-        recognition.maxAlternatives = 1;
-
-        recognizing = true;
-        autoRestartEnabled = true;
-        startTime = Date.now();
-        canValidate = false;
-        
-        startBtn.textContent = "🛑 Stop";
-        startBtn.className = "stop-btn";
-        scoreDiv.textContent = "🎤 Starting...";
-        
-        recognition.start();
-        
-        setTimeout(() => {
-          canValidate = true;
-          if (recognizing) {
-            if (currentLevel === 'L3') {
-              scoreDiv.textContent = `🎤 Read the full sentence: "${sentences[sentenceIndex]}"`;
-              renderWords();
-            } else {
-              scoreDiv.textContent = `🎤 Say: "${words[currentWordIndex]}"`;
-            }
-          }
-        }, levels[currentLevel].delay);
-        
-      } catch (e) {
-        showError("Failed to start: " + e.message);
-        resetUI();
-      }
-    }
-
-    // Enhanced validation with better mobile matching
-    window.validateWord = function (spoken) {
-      if (!canValidate || currentWordIndex >= words.length || currentLevel === 'L3') return;
-      
-      const expected = words[currentWordIndex].toLowerCase();
-      const spokenLower = spoken.toLowerCase().trim();
-      const spokenWords = spokenLower.split(/\s+/);
-      
-      console.log(`Validating word ${currentWordIndex}: spoken="${spokenLower}", expected="${expected}"`);
-      
-      // Enhanced matching logic - more lenient for mobile
-      const matched = spokenWords.some(word => {
-        // Exact match
-        if (word === expected) return true;
-        
-        // Contains match (both directions)
-        if (word.includes(expected) || expected.includes(word)) return true;
-        
-        // Partial match for longer words (more lenient)
-        if (word.length >= 2 && expected.length >= 2) {
-          if (word.substring(0, Math.min(3, word.length)) === expected.substring(0, Math.min(3, expected.length))) return true;
-        }
-        
-        // Remove common suffixes and prefixes
-        const wordBase = word.replace(/s$|ed$|ing$|ly$/i, '');
-        const expectedBase = expected.replace(/s$|ed$|ing$|ly$/i, '');
-        if (wordBase === expectedBase || wordBase.includes(expectedBase) || expectedBase.includes(wordBase)) return true;
-        
-        // Phonetic similarity (enhanced)
-        const wordPhonetic = word.replace(/ph/g, 'f').replace(/th/g, 't').replace(/ck/g, 'k');
-        const expectedPhonetic = expected.replace(/ph/g, 'f').replace(/th/g, 't').replace(/ck/g, 'k');
-        if (wordPhonetic === expectedPhonetic) return true;
-        
-        // Sound-like matches
-        if (word.length >= 3 && expected.length >= 3) {
-          const similarity = getSimilarity(word, expected);
-          if (similarity > 0.6) return true; // 60% similarity threshold
-        }
-        
-        return false;
-      });
-      
-      results[currentWordIndex] = matched ? "correct" : "wrong";
-      
-      const resultDisplayDelay = isMobile ? 100 : 200; // Faster feedback on mobile
-      
-      setTimeout(() => {
-        scoreDiv.textContent = matched
-          ? `✅ Correct! "${expected}"`
-          : `❌ Said "${spokenLower}", expected "${expected}"`;
-      }, resultDisplayDelay);
-      
-      // Move to next word that needs validation (skip 2-letter words)
-      do {
-        currentWordIndex++;
-      } while (currentWordIndex < words.length && words[currentWordIndex].length <= 2);
-      
-      renderWords();
-
-      if (currentWordIndex >= words.length) {
-        // Sentence complete - stop everything
-        autoRestartEnabled = false; // Stop auto-restart
-        setTimeout(() => {
-          stopRecognition();
-          const score = results.filter((r) => r === "correct").length;
-          const totalWords = words.length;
-          
-          const incorrectWords = words.filter((word, index) => results[index] === "wrong");
-          
-          scoreDiv.textContent = `🎉 Score: ${score}/${totalWords}`;
-          
-          if (incorrectWords.length > 0) {
-            setTimeout(() => {
-              if (!incorrectHandler) {
-                incorrectHandler = new IncorrectWordHandler();
-              }
-              
-              incorrectHandler.init(incorrectWords, () => {
-                nextBtn.style.display = sentenceIndex < sentences.length - 1 ? "inline-block" : "none";
-                incorrectHandler = null;
-              });
-            }, 1000);
-          } else {
-            nextBtn.style.display = sentenceIndex < sentences.length - 1 ? "inline-block" : "none";
-          }
-        }, resultDisplayDelay);
-        return;
-      }
-
-      // Keep microphone active for next word
-      console.log(`Moving to next word ${currentWordIndex}: "${words[currentWordIndex]}"`);
-      
-      // Show next word prompt immediately
-      const totalDelay = resultDisplayDelay + levels[currentLevel].nextWordDelay;
-      setTimeout(() => {
-        if (recognizing && currentWordIndex < words.length) {
-          scoreDiv.textContent = `🎤 Say: "${words[currentWordIndex]}"`;
-          console.log("Ready for next word, mic should be active");
-        }
-      }, totalDelay);
-    };
-
-    // Similarity function for better word matching
-    function getSimilarity(s1, s2) {
-      let longer = s1;
-      let shorter = s2;
-      if (s1.length < s2.length) {
-        longer = s2;
-        shorter = s1;
-      }
-      const editDistance = getEditDistance(longer, shorter);
-      return (longer.length - editDistance) / longer.length;
-    }
-
-    function getEditDistance(s1, s2) {
-      const matrix = [];
-      for (let i = 0; i <= s2.length; i++) {
-        matrix[i] = [i];
-      }
-      for (let j = 0; j <= s1.length; j++) {
-        matrix[0][j] = j;
-      }
-      for (let i = 1; i <= s2.length; i++) {
-        for (let j = 1; j <= s1.length; j++) {
-          if (s2.charAt(i - 1) === s1.charAt(j - 1)) {
-            matrix[i][j] = matrix[i - 1][j - 1];
-          } else {
-            matrix[i][j] = Math.min(
-              matrix[i - 1][j - 1] + 1,
-              matrix[i][j - 1] + 1,
-              matrix[i - 1][j] + 1
-            );
-          }
-        }
-      }
-      return matrix[s2.length][s1.length];
-    }
-
-    // Improved expert level full sentence validation
-    window.validateFullSentence = function (spoken) {
-      if (!canValidate || currentLevel !== 'L3') return;
-      
-      const spokenWords = spoken.toLowerCase().trim().split(/\s+/);
-      const expectedWords = words.map(w => w.toLowerCase());
-      
-      console.log("Spoken words:", spokenWords.length, spokenWords);
-      console.log("Expected words:", expectedWords.length, expectedWords);
-      
-      // Stop mic immediately
-      stopRecognition();
-      
-      // More intelligent word alignment for expert level
-      const alignedResults = alignWords(spokenWords, expectedWords);
-      
-      // Apply results
-      expectedWords.forEach((expectedWord, index) => {
-        if (results[index] !== "correct") { // Don't override auto-correct 2-letter words
-          results[index] = alignedResults[index] ? "correct" : "wrong";
-        }
-      });
-      
-      currentWordIndex = words.length;
-      renderWords();
-      
-      const score = results.filter((r) => r === "correct").length;
-      const totalWords = words.length;
-      scoreDiv.textContent = `🎉 Expert Score: ${score}/${totalWords}`;
-      
-      // Handle incorrect words for expert level too
-      const incorrectWords = words.filter((word, index) => results[index] === "wrong");
-      
-      if (incorrectWords.length > 0) {
-        setTimeout(() => {
-          if (!incorrectHandler) {
-            incorrectHandler = new IncorrectWordHandler();
-          }
-          
-          incorrectHandler.init(incorrectWords, () => {
-            nextBtn.style.display = sentenceIndex < sentences.length - 1 ? "inline-block" : "none";
-            incorrectHandler = null;
-          });
-        }, 1000);
-      } else {
-        nextBtn.style.display = sentenceIndex < sentences.length - 1 ? "inline-block" : "none";
-      }
-    };
-
-    // Smart word alignment for expert mode
-    function alignWords(spoken, expected) {
-      const results = new Array(expected.length).fill(false);
-      const usedSpoken = new Array(spoken.length).fill(false);
-      
-      // First pass: exact matches
-      for (let i = 0; i < expected.length; i++) {
-        for (let j = 0; j < spoken.length; j++) {
-          if (!usedSpoken[j] && spoken[j] === expected[i]) {
-            results[i] = true;
-            usedSpoken[j] = true;
-            break;
-          }
-        }
-      }
-      
-      // Second pass: similarity matches
-      for (let i = 0; i < expected.length; i++) {
-        if (!results[i]) {
-          for (let j = 0; j < spoken.length; j++) {
-            if (!usedSpoken[j]) {
-              const similarity = getSimilarity(spoken[j], expected[i]);
-              if (similarity > 0.5 || // 50% similarity
-                  spoken[j].includes(expected[i]) || 
-                  expected[i].includes(spoken[j])) {
-                results[i] = true;
-                usedSpoken[j] = true;
-                break;
-              }
-            }
-          }
-        }
-      }
-      
-      return results;
-    }
-
-    window.nextSentence = function () {
-      if (sentenceIndex < sentences.length - 1) {
-        sentenceIndex++;
-        initWords();
-        nextBtn.style.display = "none";
-        scoreDiv.textContent = "";
-        resetUI();
-      }
-    };
-
-    window.changeLevel = function(level) {
-      currentLevel = level;
-      updateLevelInfo();
-      if (recognizing) {
-        stopRecognition();
-      }
-      // Reset current sentence for new level
-      initWords();
-    };
-
-    const handleFileUpload = (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      
-      const reader = new FileReader();
-      reader.onload = function (evt) {
-        const text = evt.target.result.trim();
-        if (text) {
-          sentences.push(text);
-          scoreDiv.textContent = "✅ New sentence added!";
-          setTimeout(() => (scoreDiv.textContent = ""), 2000);
-        }
-      };
-      reader.readAsText(file);
-    };
-
-    async function setupSpeechRecognition() {
-      // Web speech recognition setup
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) {
-        showError("Speech recognition not supported in this browser.");
-        startBtn.disabled = true;
-        return;
-      }
-
-      recognition = new SR();
-      recognition.lang = "en-US";
-
-      recognition.onstart = () => {
-        console.log("Recognition started for word:", currentWordIndex < words.length ? words[currentWordIndex] : "complete");
-        recognizing = true;
-        startTime = Date.now();
-        
-        // Only update UI if this is the initial start (not auto-restart)
-        if (startBtn.textContent !== "🛑 Stop") {
-          startBtn.textContent = "🛑 Stop";
-          startBtn.className = "stop-btn";
-        }
-        
-        // Faster start for mobile
-        const startDelay = isMobile ? 50 : levels[currentLevel].delay;
-        
-        setTimeout(() => {
-          canValidate = true;
-          if (recognizing) {
-            if (currentLevel === 'L3') {
-              scoreDiv.textContent = `🎤 Read the full sentence: "${sentences[sentenceIndex]}"`;
-              renderWords();
-            } else if (currentWordIndex < words.length) {
-              scoreDiv.textContent = `🎤 Say: "${words[currentWordIndex]}"`;
-            }
-          }
-        }, startDelay);
-      };
-
-      recognition.onerror = (e) => {
-        console.log("Recognition error:", e.error, "auto-restart:", autoRestartEnabled);
-        
-        const errorMessages = {
-          'no-speech': "No speech detected. Trying again...",
-          'audio-capture': "Microphone not accessible. Please check permissions.",
-          'not-allowed': "Microphone permission denied. Please allow and refresh the page.",
-          'network': "Network error. Check your internet connection.",
-          'aborted': "Speech recognition was stopped.",
-        };
-        
-        // Force restart on no-speech for mobile
-        if (e.error === 'no-speech' && autoRestartEnabled && currentWordIndex < words.length) {
-          console.log("No speech detected, forcing restart...");
-          recognizing = false; // Reset flag
-          
-          setTimeout(() => {
-            if (autoRestartEnabled && !recognizing && currentWordIndex < words.length) {
-              try {
-                recognizing = true;
-                recognition.start();
-                console.log("Force restarted after no-speech");
-              } catch (err) {
-                console.log("Force restart failed:", err);
-                recognizing = false;
-                showError("Microphone stopped. Please click Start again.");
-                resetUI();
-              }
-            }
-          }, isMobile ? 200 : 500);
-        } 
-        // Handle aborted gracefully
-        else if (e.error === 'aborted') {
-          recognizing = false;
-          if (!autoRestartEnabled) {
-            resetUI();
-          }
-        }
-        // Show error for other cases
-        else {
-          const message = errorMessages[e.error] || `Error: ${e.error}. Please try again.`;
-          showError(message);
-          resetUI();
-        }
-      };
-
-      recognition.onend = () => {
-  console.log("Recognition ended, auto-restart:", autoRestartEnabled, "current word:", currentWordIndex, "recognizing:", recognizing);
-
-  if (autoRestartEnabled && currentWordIndex < words.length) {
-    recognizing = false;
-
-    setTimeout(() => {
-      if (!recognizing && autoRestartEnabled && currentWordIndex < words.length) {
-        try {
-          recognition.start();
-          recognizing = true;
-          console.log("✅ Auto-restarted mic for next word.");
-        } catch (err) {
-          console.error("❌ Mic restart failed:", err);
-          resetUI();
-        }
-      }
-    }, 200); // Small delay before restart
-  } else {
-    resetUI();
+  });
+  
+  // Find first word that needs to be spoken (length > 2 and not marked correct)
+  currentWordIndex = words.findIndex((word, index) => word.length > 2 && results[index] === null);
+  if (currentWordIndex === -1) {
+    currentWordIndex = words.length; // All words are short, set to end
   }
+  
+  setSpeechState(prev => ({
+    ...prev,
+    words,
+    results,
+    currentWordIndex
+  }));
 };
 
 
-      recognition.onresult = (e) => {
-        if (!canValidate || !recognizing) return;
-        
-        let finalTranscript = "";
-        
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          const transcript = e.results[i][0].transcript;
-          if (e.results[i].isFinal) {
-            finalTranscript += transcript + " ";
-          }
-        }
-        
-        if (finalTranscript.trim()) {
-          console.log("Final transcript:", finalTranscript.trim());
-          if (currentLevel === 'L3') {
-            window.validateFullSentence(finalTranscript.trim());
-          } else {
-            window.validateWord(finalTranscript.trim());
-          }
-        }
-      };
+const setupSpeechRecognition = () => {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    setSpeechState(prev => ({
+      ...prev,
+      errorMessage: "Speech recognition not supported in this browser."
+    }));
+    return;
+  }
 
-      const uploadInput = document.getElementById("uploadTxt");
-      if (uploadInput) {
-        uploadInput.addEventListener("change", handleFileUpload);
-      }
-      
-      if (levelSelect) {
-        levelSelect.addEventListener("change", (e) => {
-          window.changeLevel(e.target.value);
-        });
-      }
-      
-      initWords();
-      updateLevelInfo();
+  recognition = new SR();
+  recognition.lang = "en-US";
+  recognition.continuous = true;
+  recognition.interimResults = false;
+
+  recognition.onstart = () => {
+    setSpeechState(prev => ({
+      ...prev,
+      recognizing: true,
+      errorMessage: ''
+    }));
+    setTimeout(() => {
+      canValidate = true;
+      // Start timeout for first word (only for non-expert modes)
+      setSpeechState(prevState => {
+        if (prevState.currentLevel !== 'L3' && prevState.currentWordIndex < prevState.words.length) {
+          startWordTimeout(prevState.currentWordIndex);
+        }
+        return prevState;
+      });
+    }, levels[speechState.currentLevel].delay);
+  };
+
+  recognition.onstop = () => {
+    if (wordTimeout) {
+      clearTimeout(wordTimeout);
+      wordTimeout = null;
     }
+  };
 
-    setupSpeechRecognition();
+  recognition.onend = () => {
+    if (wordTimeout) {
+      clearTimeout(wordTimeout);
+      wordTimeout = null;
+    }
     
-    // Cleanup
-    return () => {
-      autoRestartEnabled = false;
-      if (incorrectHandler) {
-        incorrectHandler.cleanup();
+    // Auto-restart recognition if we're still in the middle of the exercise
+    // and autoRestartEnabled is true (set when user clicks start)
+    setSpeechState(prevState => {
+      if (autoRestartEnabled && prevState.currentWordIndex < prevState.words.length && prevState.currentLevel !== 'L3') {
+        // Small delay before restarting to avoid rapid restart loops
+        setTimeout(() => {
+          if (recognition && autoRestartEnabled) {
+            try {
+              recognition.start();
+            } catch (e) {
+              console.log("Recognition restart failed:", e);
+            }
+          }
+        }, 100);
       }
-      if (recognition) {
-        try {
-          recognition.abort();
-        } catch (e) {}
-      }
-      if (restartTimeout) {
-        clearTimeout(restartTimeout);
-      }
-    };
-    
-  }, []);
+      return { ...prevState, recognizing: autoRestartEnabled && prevState.currentWordIndex < prevState.words.length };
+    });
+  };
 
-  return (
-    <div style={{ padding: "20px", fontFamily: "Arial, sans-serif", maxWidth: "600px", margin: "0 auto" }}>
-      <h1 style={{ textAlign: "center", color: "#333" }}>👧👦 Kids Speech Buddy 🎤</h1>
-      <p style={{ textAlign: "center", color: "#666" }}>Say the word you see highlighted!</p>
+  recognition.onerror = (e) => {
+    console.log("Recognition error:", e.error);
+    setSpeechState(prev => ({
+      ...prev,
+      recognizing: false,
+      errorMessage: `Error: ${e.error}. Please try again.`
+    }));
+    
+    // Try to restart on certain errors (but not on no-speech or aborted)
+    if (autoRestartEnabled && !['no-speech', 'aborted'].includes(e.error)) {
+      setTimeout(() => {
+        if (recognition && autoRestartEnabled) {
+          try {
+            recognition.start();
+          } catch (error) {
+            console.log("Error restart failed:", error);
+          }
+        }
+      }, 500);
+    }
+  };
+
+  recognition.onresult = (e) => {
+    if (!canValidate) return;
+    
+    let finalTranscript = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) {
+        finalTranscript += e.results[i][0].transcript + " ";
+      }
+    }
+    
+    if (finalTranscript.trim()) {
+      validateWord(finalTranscript.trim());
+    }
+  };
+};
+
+ // Fixed validateWord function with proper Expert mode validation
+const validateWord = (spoken) => {
+  // Clear any existing timeout
+  if (wordTimeout) {
+    clearTimeout(wordTimeout);
+    wordTimeout = null;
+  }
+  
+  setSpeechState(prevState => {
+    const { words, currentWordIndex, results, currentLevel } = prevState;
+    
+    if (currentWordIndex >= words.length) return prevState;
+    
+    const newResults = [...results];
+    let newWordIndex = currentWordIndex;
+    let scoreMessage = "";
+    
+    if (currentLevel === 'L3') {
+      // Expert mode - validate each word individually in the spoken sentence
+      const spokenWords = spoken.toLowerCase().trim().split(/\s+/);
+      const targetWords = words.map(w => w.toLowerCase());
       
-      {/* Mobile Instructions */}
-      <div style={{ textAlign: "center", marginBottom: "15px", padding: "10px", backgroundColor: "#e8f5e8", borderRadius: "5px", fontSize: "14px" }}>
+      // Mark each word as correct or wrong based on individual word matching
+      words.forEach((word, index) => {
+        if (word.length <= 2) {
+          newResults[index] = "correct"; // Auto-correct short words
+        } else {
+          const wordLower = word.toLowerCase();
+          // Check if this word appears in the spoken sentence
+          const foundInSpoken = spokenWords.some(spokenWord => 
+            spokenWord.includes(wordLower) || wordLower.includes(spokenWord)
+          );
+          newResults[index] = foundInSpoken ? "correct" : "wrong";
+        }
+      });
+      
+      newWordIndex = words.length;
+      
+      const correctCount = newResults.filter(r => r === "correct").length;
+      const totalWords = words.length;
+      const accuracy = Math.round((correctCount / totalWords) * 100);
+      
+      if (accuracy >= 70) {
+        scoreMessage = `🎉 Great! ${correctCount}/${totalWords} words correct (${accuracy}%)`;
+      } else {
+        scoreMessage = `❌ ${correctCount}/${totalWords} words correct (${accuracy}%). Try again!`;
+      }
+      
+    } else {
+      // Regular mode (L1, L2) - word by word, ALWAYS move to next
+      const expected = words[currentWordIndex].toLowerCase();
+      const spokenLower = spoken.toLowerCase().trim();
+      
+      const matched = spokenLower.includes(expected) || expected.includes(spokenLower);
+      newResults[currentWordIndex] = matched ? "correct" : "wrong";
+      
+      // ALWAYS move to next word regardless of correct/wrong
+      let nextIndex = currentWordIndex + 1;
+      while (nextIndex < words.length && words[nextIndex].length <= 2) {
+        newResults[nextIndex] = "correct"; // Auto-mark short words
+        nextIndex++;
+      }
+      newWordIndex = nextIndex;
+      
+      if (matched) {
+        scoreMessage = `✅ Correct! "${expected}"`;
+      } else {
+        scoreMessage = `❌ Said "${spokenLower}", expected "${expected}"`;
+      }
+    }
+    
+    // Start timeout for next word if not finished (only for L1/L2)
+    if (newWordIndex < words.length && currentLevel !== 'L3') {
+      startWordTimeout(newWordIndex);
+    }
+    
+    // Check if all words are completed
+    if (newWordIndex >= words.length) {
+      setTimeout(() => {
+        recognition?.stop();
+        const score = newResults.filter(r => r === "correct").length;
+        setSpeechState(prev => ({
+          ...prev,
+          recognizing: false,
+          score: `🎉 Final Score: ${score}/${words.length}`
+        }));
+      }, 1000);
+    }
+    
+    return {
+      ...prevState,
+      results: newResults,
+      currentWordIndex: newWordIndex,
+      score: scoreMessage
+    };
+  });
+};
+
+const startWordTimeout = (wordIndex) => {
+  wordTimeout = setTimeout(() => {
+    setSpeechState(prevState => {
+      const { words, results } = prevState;
+      
+      if (wordIndex >= words.length || wordIndex !== prevState.currentWordIndex) {
+        return prevState; // Word already processed or finished
+      }
+      
+      const newResults = [...results];
+      newResults[wordIndex] = "wrong"; // Mark as wrong due to timeout
+      
+      // Move to next word
+      let nextIndex = wordIndex + 1;
+      while (nextIndex < words.length && words[nextIndex].length <= 2) {
+        newResults[nextIndex] = "correct"; // Auto-mark short words
+        nextIndex++;
+      }
+      
+      // Start timeout for next word if not finished
+      if (nextIndex < words.length) {
+        startWordTimeout(nextIndex);
+      }
+      
+      // Check if all words are completed
+      if (nextIndex >= words.length) {
+        setTimeout(() => {
+          recognition?.stop();
+          const score = newResults.filter(r => r === "correct").length;
+          setSpeechState(prev => ({
+            ...prev,
+            recognizing: false,
+            score: `🎉 Final Score: ${score}/${words.length}`
+          }));
+        }, 1000);
+      }
+      
+      return {
+        ...prevState,
+        results: newResults,
+        currentWordIndex: nextIndex,
+        score: `⏰ Time's up! Expected "${words[wordIndex]}"`
+      };
+    });
+  }, 5000); // 5 second timeout
+};
+
+
+   window.toggleRecognition = () => {
+  if (speechState.recognizing) {
+    recognition?.stop();
+    autoRestartEnabled = false;
+    setSpeechState(prev => ({ ...prev, recognizing: false }));
+  } else {
+    if (speechState.currentWordIndex === 0) {
+      initWords();
+    }
+    autoRestartEnabled = true; // Enable auto-restart
+    recognition?.start();
+  }
+};
+    setupSpeechRecognition();
+    initWords();
+  };
+
+  const DashboardView = () => (
+    <div className="dashboard">
+      {/* Header */}
+      <div className="header">
+        <div className="user-welcome">
+          <div className="avatar">
+            <span>👧</span>
+          </div>
+          <div className="welcome-text">
+            <h2>Welcome back, Emma Wilson! 👋</h2>
+            <p>3rd Grade • Sunshine Elementary</p>
+          </div>
+        </div>
+        <div className="stats-summary">
+          <div className="stat-item">
+            <Star className="stat-icon" />
+            <span>{userStats.totalStars}</span>
+          </div>
+          <div className="stat-item">
+            <span className="streak-number">{userStats.currentStreak}</span>
+            <span className="streak-label">Total Stars - Day Streak</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="stats-grid">
+        <div className="stat-card level-card">
+          <BookOpen className="card-icon" />
+          <div className="stat-content">
+            <h3>Level {userStats.level}</h3>
+            <p>Reading Level</p>
+          </div>
+        </div>
+        <div className="stat-card streak-card">
+          <Calendar className="card-icon" />
+          <div className="stat-content">
+            <h3>{userStats.currentStreak} days</h3>
+            <p>Current Streak</p>
+          </div>
+        </div>
+        <div className="stat-card stars-card">
+          <Star className="card-icon" />
+          <div className="stat-content">
+            <h3>{userStats.totalStars}</h3>
+            <p>Total Stars</p>
+          </div>
+        </div>
+        <div className="stat-card accuracy-card">
+          <Target className="card-icon" />
+          <div className="stat-content">
+            <h3>{userStats.accuracy}%</h3>
+            <p>Accuracy</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Activity Cards */}
+      <div className="activity-grid">
+        <div className="activity-card reading-practice" onClick={() => setCurrentView('practice')}>
+          <div className="activity-header">
+            <Mic className="activity-icon" />
+            <h3>Reading Practice</h3>
+          </div>
+          <p>Practice reading with speech recognition and get instant feedback.</p>
+          <div className="activity-meta">
+            <span>Level {userStats.level}</span>
+            <span>~5 min</span>
+          </div>
+        </div>
+        
+        <div className="activity-card daily-challenge">
+          <div className="activity-header">
+            <Zap className="activity-icon daily-icon" />
+            <h3>Daily Challenge</h3>
+          </div>
+          <p>Complete today's reading challenge and earn bonus stars.</p>
+          <div className="activity-meta">
+            <span>5 min</span>
+            <span>+10 Stars</span>
+          </div>
+        </div>
+        
+       <div className="activity-card my-book" onClick={() => setCurrentView('imageupload')}>
+  <div className="activity-header">
+    <BookOpen className="activity-icon book-icon" />
+    <h3>Read My Book</h3>
+  </div>
+  <p>Upload a photo of any book and practice reading it aloud.</p>
+  <div className="activity-meta">
+    <span>OCR Powered</span>
+    <span>Any Book</span>
+  </div>
+</div>
+
+      </div>
+
+      {/* Recent Achievements */}
+      <div className="achievements-section">
+        <h3>Recent Achievements 🏆</h3>
+        <div className="achievements-grid">
+          <div className="achievement-card">
+            <Trophy className="achievement-icon first-read" />
+            <span>First Read</span>
+          </div>
+          <div className="achievement-card">
+            <Zap className="achievement-icon speed-reader" />
+            <span>Speed Reader</span>
+          </div>
+          <div className="achievement-card">
+            <Award className="achievement-icon next-badge" />
+            <span>Next Badge</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Reading Practice Preview */}
+      <div className="practice-preview">
+        <div className="preview-header">
+          <h3>Reading Practice</h3>
+          <select className="level-selector">
+            <option>The Happy Cat (Level 1)</option>
+            <option>Adventure Story (Level 2)</option>
+            <option>Science Facts (Level 3)</option>
+          </select>
+        </div>
+        <div className="preview-content">
+          <div className="preview-text">
+            <span className="highlight-word">The</span> cat sat on the mat. The cat was very happy. It liked to play with a ball. The ball was red and round.
+          </div>
+          <div className="preview-actions">
+            <button className="start-reading-btn" onClick={() => setCurrentView('practice')}>
+              <Play className="btn-icon" />
+              Start Reading
+            </button>
+            <button className="listen-btn">
+              <Volume2 className="btn-icon" />
+              Listen
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  const PracticeView = () => (
+    <div className="practice-view">
+      <div className="practice-header">
+        <button className="back-btn" onClick={() => setCurrentView('dashboard')}>
+          ← Back to Dashboard
+        </button>
+        <h2>👧👦 Kids Speech Buddy 🎤</h2>
+      </div>
+
+      <div className="mobile-instructions">
         📱 <strong>Mobile Users:</strong> Click "Start" once - speak all words continuously!
       </div>
       
-      {/* Level Selector */}
-      <div style={{ textAlign: "center", marginBottom: "20px" }}>
-        <label htmlFor="levelSelect" style={{ marginRight: "10px", fontWeight: "bold" }}>Choose Level:</label>
-        <select id="levelSelect" defaultValue="L1" style={{ padding: "5px", fontSize: "16px" }}>
+      <div className="level-selector-container">
+        <label htmlFor="levelSelect">Choose Level:</label>
+        <select 
+          id="levelSelect" 
+          value={speechState.currentLevel}
+          onChange={(e) => setSpeechState(prev => ({ ...prev, currentLevel: e.target.value }))}
+        >
           <option value="L1">Beginner (0.5s per word)</option>
           <option value="L2">Advance (0.3s per word)</option>
           <option value="L3">Expert (Full Sentence)</option>
         </select>
       </div>
       
-      <div id="levelInfo" style={{ textAlign: "center", marginBottom: "15px", fontWeight: "bold", color: "#007bff" }}>
-        Level: Beginner (0.5s per word)
+      <div className="level-info">
+        Level: {speechState.currentLevel === 'L1' ? 'Beginner (0.5s per word)' : 
+                speechState.currentLevel === 'L2' ? 'Advance (0.3s per word)' : 
+                'Expert (Full Sentence)'}
       </div>
       
-      <div id="errorMessage" style={{ display: "none", textAlign: "center", marginBottom: "15px", padding: "10px", backgroundColor: "#ffe6e6", borderRadius: "5px", color: "#cc0000" }}>
+      {speechState.errorMessage && (
+        <div className="error-message">
+          {speechState.errorMessage}
+        </div>
+      )}
+      
+      <div className="words-container">
+        {speechState.words.map((word, i) => (
+          <span
+            key={i}
+            className={`word ${
+              speechState.results[i] === "correct" ? "correct" :
+              speechState.results[i] === "wrong" ? "wrong" :
+              i === speechState.currentWordIndex ? "highlight" : ""
+            }`}
+          >
+            {word}
+          </span>
+        ))}
       </div>
       
-      <div id="words" style={{ textAlign: "center", marginBottom: "20px", fontSize: "24px", lineHeight: "1.5" }}>
+      <div className="score-display">
+        {speechState.score}
       </div>
       
-      <div id="score" style={{ textAlign: "center", marginBottom: "20px", fontSize: "18px", fontWeight: "bold", minHeight: "25px" }}>
-      </div>
-      
-      <div style={{ textAlign: "center", marginBottom: "20px" }}>
-        <button id="start_button" onClick={() => window.toggleRecognition && window.toggleRecognition()} 
-                style={{ padding: "15px 30px", fontSize: "18px", border: "none", borderRadius: "5px", backgroundColor: "#007bff", color: "white", cursor: "pointer" }}>
-          🎤 Start
+      <div className="practice-controls">
+        <button 
+          className={`start-button ${speechState.recognizing ? 'stop-btn' : ''}`}
+          onClick={() => window.toggleRecognition && window.toggleRecognition()}
+        >
+          {speechState.recognizing ? '🛑 Stop' : '🎤 Start'}
         </button>
       </div>
-      
-      <div style={{ textAlign: "center", marginBottom: "20px" }}>
-        <button id="next_button" style={{ display: "none", padding: "10px 20px", fontSize: "16px", border: "none", borderRadius: "5px", backgroundColor: "#28a745", color: "white", cursor: "pointer" }}
-                onClick={() => window.nextSentence && window.nextSentence()}>
-          ➡️ Next Sentence
-        </button>
-      </div>
-      
-      <div style={{ textAlign: "center" }}>
-        <input type="file" id="uploadTxt" accept=".txt" style={{ padding: "5px" }} />
-        <label htmlFor="uploadTxt" style={{ marginLeft: "10px", color: "#666" }}>Upload custom sentence</label>
-      </div>
+    </div>
+  );
+const ImageUploadView = () => (
+  <ImageUpload 
+    onTextExtracted={handleTextExtracted}
+    onBack={handleBackToDashboard}
+  />
+);
+
+const ReadBookView = () => (
+  <ReadMyBook 
+    bookText={bookText}
+    onBack={handleBackToImageUpload}
+  />
+);
+
+
+  return (
+    <div className="app">
+      <div className="app">
+  {currentView === 'imageupload' && <ImageUploadView />}
+  {currentView === 'dashboard' && <DashboardView />}
+  {currentView === 'practice' && <PracticeView />}
+  {currentView === 'readbook' && <ReadBookView />}
+</div>
 
       <style jsx>{`
+        .app {
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          min-height: 100vh;
+          padding: 20px;
+        }
+
+        .dashboard {
+          max-width: 1200px;
+          margin: 0 auto;
+          color: white;
+        }
+
+        /* Header Styles */
+        .header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 30px;
+          background: rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(10px);
+          border-radius: 20px;
+          padding: 20px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .user-welcome {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+        }
+
+        .avatar {
+          width: 60px;
+          height: 60px;
+          border-radius: 50%;
+          background: linear-gradient(45deg, #ff6b6b, #feca57);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 24px;
+        }
+
+        .welcome-text h2 {
+          margin: 0;
+          font-size: 24px;
+          font-weight: 600;
+        }
+
+        .welcome-text p {
+          margin: 5px 0 0 0;
+          opacity: 0.8;
+          font-size: 14px;
+        }
+
+        .stats-summary {
+          display: flex;
+          align-items: center;
+          gap: 20px;
+        }
+
+        .stat-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .stat-icon {
+          width: 24px;
+          height: 24px;
+          color: #feca57;
+        }
+
+        .streak-number {
+          font-size: 32px;
+          font-weight: bold;
+          color: #feca57;
+        }
+
+        .streak-label {
+          font-size: 12px;
+          opacity: 0.8;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+          gap: 20px;
+          margin-bottom: 30px;
+        }
+
+        .stat-card {
+          background: rgba(255, 255, 255, 0.15);
+          backdrop-filter: blur(10px);
+          border-radius: 16px;
+          padding: 20px;
+          display: flex;
+          align-items: center;
+          gap: 15px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          transition: transform 0.2s ease;
+        }
+
+        .stat-card:hover {
+          transform: translateY(-5px);
+        }
+
+        .card-icon {
+          width: 32px;
+          height: 32px;
+          color: #feca57;
+        }
+
+        .stat-content h3 {
+          margin: 0;
+          font-size: 24px;
+          font-weight: 700;
+        }
+
+        .stat-content p {
+          margin: 5px 0 0 0;
+          opacity: 0.8;
+          font-size: 14px;
+        }
+
+        /* Activity Grid */
+        .activity-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+          gap: 20px;
+          margin-bottom: 30px;
+        }
+
+        .activity-card {
+          background: rgba(255, 255, 255, 0.95);
+          color: #333;
+          border-radius: 20px;
+          padding: 25px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .activity-card:hover {
+          transform: translateY(-8px);
+          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        .reading-practice {
+          background: linear-gradient(135deg, #667eea, #764ba2);
+          color: white;
+        }
+
+        .daily-challenge {
+          background: linear-gradient(135deg, #48c6ef, #6f86d6);
+          color: white;
+        }
+
+        .my-book {
+          background: linear-gradient(135deg, #ff6b6b, #feca57);
+          color: white;
+        }
+
+        .activity-header {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 15px;
+        }
+
+        .activity-icon {
+          width: 28px;
+          height: 28px;
+        }
+
+        .activity-header h3 {
+          margin: 0;
+          font-size: 20px;
+          font-weight: 600;
+        }
+
+        .activity-card p {
+          margin: 0 0 15px 0;
+          opacity: 0.9;
+          line-height: 1.5;
+        }
+
+        .activity-meta {
+          display: flex;
+          gap: 15px;
+          font-size: 14px;
+          opacity: 0.8;
+        }
+
+        /* Achievements */
+        .achievements-section {
+          margin-bottom: 30px;
+        }
+
+        .achievements-section h3 {
+          margin-bottom: 20px;
+          font-size: 22px;
+          font-weight: 600;
+        }
+
+        .achievements-grid {
+          display: flex;
+          gap: 20px;
+          flex-wrap: wrap;
+        }
+
+        .achievement-card {
+          background: rgba(255, 255, 255, 0.1);
+          backdrop-filter: blur(10px);
+          border-radius: 16px;
+          padding: 20px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 10px;
+          min-width: 120px;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .achievement-icon {
+          width: 40px;
+          height: 40px;
+          color: #feca57;
+        }
+
+        /* Practice Preview */
+        .practice-preview {
+          background: rgba(255, 255, 255, 0.95);
+          color: #333;
+          border-radius: 20px;
+          padding: 25px;
+          margin-bottom: 20px;
+        }
+
+        .preview-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 20px;
+        }
+
+        .preview-header h3 {
+          margin: 0;
+          font-size: 20px;
+          font-weight: 600;
+        }
+
+        .level-selector {
+          padding: 8px 12px;
+          border-radius: 8px;
+          border: 1px solid #ddd;
+          background: white;
+        }
+
+        .preview-text {
+          font-size: 18px;
+          line-height: 1.6;
+          margin-bottom: 20px;
+          padding: 20px;
+          background: #f8f9fa;
+          border-radius: 12px;
+        }
+
+        .highlight-word {
+          background: #fff3cd;
+          padding: 2px 6px;
+          border-radius: 4px;
+          font-weight: bold;
+        }
+
+        .preview-actions {
+          display: flex;
+          gap: 15px;
+        }
+
+        .start-reading-btn, .listen-btn {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          padding: 12px 20px;
+          border: none;
+          border-radius: 10px;
+          cursor: pointer;
+          font-weight: 600;
+          transition: all 0.2s ease;
+        }
+
+        .start-reading-btn {
+          background: #28a745;
+          color: white;
+        }
+
+        .listen-btn {
+          background: #6c757d;
+          color: white;
+        }
+
+        .btn-icon {
+          width: 16px;
+          height: 16px;
+        }
+
+        /* Practice View Styles */
+        .practice-view {
+          max-width: 800px;
+          margin: 0 auto;
+          background: rgba(255, 255, 255, 0.95);
+          border-radius: 20px;
+          padding: 30px;
+          color: #333;
+        }
+
+        .practice-header {
+          display: flex;
+          align-items: center;
+          gap: 20px;
+          margin-bottom: 20px;
+        }
+
+        .back-btn {
+          background: #6c757d;
+          color: white;
+          border: none;
+          padding: 10px 15px;
+          border-radius: 8px;
+          cursor: pointer;
+          font-weight: 500;
+        }
+
+        .practice-header h2 {
+          margin: 0;
+          color: #333;
+          text-align: center;
+          flex: 1;
+        }
+
+        .mobile-instructions {
+          text-align: center;
+          margin-bottom: 15px;
+          padding: 10px;
+          background: #e8f5e8;
+          border-radius: 8px;
+          font-size: 14px;
+        }
+
+        .level-selector-container {
+          text-align: center;
+          margin-bottom: 20px;
+        }
+
+        .level-selector-container label {
+          margin-right: 10px;
+          font-weight: bold;
+        }
+
+        .level-selector-container select {
+          padding: 8px 12px;
+          font-size: 16px;
+          border-radius: 6px;
+          border: 1px solid #ddd;
+        }
+
+        .level-info {
+          text-align: center;
+          margin-bottom: 15px;
+          font-weight: bold;
+          color: #007bff;
+        }
+
+        .error-message {
+          text-align: center;
+          margin-bottom: 15px;
+          padding: 10px;
+          background: #ffe6e6;
+          border-radius: 8px;
+          color: #cc0000;
+        }
+
+        .words-container {
+          text-align: center;
+          margin-bottom: 20px;
+          font-size: 24px;
+          line-height: 1.5;
+        }
+
         .word {
           display: inline-block;
           margin: 5px;
           padding: 8px 12px;
-          border-radius: 5px;
-          background-color: #f8f9fa;
+          border-radius: 6px;
+          background: #f8f9fa;
           border: 2px solid #dee2e6;
           transition: all 0.3s ease;
         }
+
         .word.highlight {
-          background-color: #fff3cd;
+          background: #fff3cd;
           border-color: #ffc107;
           transform: scale(1.1);
           font-weight: bold;
         }
-        .word.sentence-highlight {
-          background-color: #e3f2fd;
-          border-color: #2196f3;
-          font-weight: bold;
-        }
+
         .word.correct {
-          background-color: #d4edda;
+          background: #d4edda;
           border-color: #28a745;
           color: #155724;
         }
+
         .word.wrong {
-          background-color: #f8d7da;
+          background: #f8d7da;
           border-color: #dc3545;
           color: #721c24;
         }
-        .stop-btn {
-          background-color: #dc3545 !important;
+
+        .score-display {
+          text-align: center;
+          margin-bottom: 20px;
+          font-size: 18px;
+          font-weight: bold;
+          min-height: 25px;
         }
-        .stop-btn:hover {
-          background-color: #c82333 !important;
+
+        .practice-controls {
+          text-align: center;
         }
-        button:hover {
+
+        .start-button {
+          padding: 15px 30px;
+          font-size: 18px;
+          border: none;
+          border-radius: 10px;
+          background: #007bff;
+          color: white;
+          cursor: pointer;
+          transition: all 0.2s ease;
+        }
+
+        .start-button.stop-btn {
+          background: #dc3545;
+        }
+
+        .start-button:hover {
           opacity: 0.9;
         }
-        button:active {
+
+        .start-button:active {
           transform: scale(0.98);
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+          .app {
+            padding: 10px;
+          }
+
+          .header {
+            flex-direction: column;
+            gap: 20px;
+            text-align: center;
+          }
+
+          .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+          }
+
+          .activity-grid {
+            grid-template-columns: 1fr;
+          }
+
+          .achievements-grid {
+            justify-content: center;
+          }
+
+          .preview-header {
+            flex-direction: column;
+            gap: 15px;
+          }
+
+          .preview-actions {
+            flex-direction: column;
+          }
         }
       `}</style>
     </div>
