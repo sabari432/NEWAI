@@ -1,20 +1,27 @@
 import React, { useEffect } from "react";
-import IncorrectWordHandler from './incorrect.js';
+
+// Mock IncorrectWordHandler for demo
+const IncorrectWordHandler = class {
+  init(words, callback) {
+    setTimeout(() => {
+      console.log("Incorrect words:", words);
+      callback();
+    }, 1000);
+  }
+  cleanup() {}
+};
 
 function App() {
   useEffect(() => {
     const sentences = [
-      "the boy is walking with dog",
-      "Kids learn better when having fun so engaging them in games is the best way to teach them English",
-      "Say the word you see highlighted",
+      "Many children play cricket in an empty ground after finishing homework",
     ];
 
-    // Level system configuration
+    // Optimized 3-level system with mobile-friendly settings
     const levels = {
-      L1: { name: "Beginner", delay: 3000, nextWordDelay: 3000 },
-      L2: { name: "Faster", delay: 1000, nextWordDelay: 1000 },
-      L3: { name: "Advanced", delay: 400, nextWordDelay: 400 },
-      L4: { name: "Expert", delay: 1, nextWordDelay: 1 }
+      L1: { name: "Beginner", delay: 500, nextWordDelay: 800 }, // Much faster for mobile
+      L2: { name: "Advance", delay: 300, nextWordDelay: 500 },
+      L3: { name: "Expert", delay: 300, nextWordDelay: 1, fullSentence: true }
     };
 
     let incorrectHandler = null;
@@ -29,7 +36,8 @@ function App() {
       startTime = 0,
       restartTimeout = null,
       isCapacitor = false,
-      speechRecognition = null;
+      speechRecognition = null,
+      autoRestartEnabled = false;
 
     const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
     
@@ -43,20 +51,38 @@ function App() {
     const nextBtn = document.getElementById("next_button");
     const startBtn = document.getElementById("start_button");
     const errorDiv = document.getElementById("errorMessage");
-    const browserInfoDiv = document.getElementById("browserInfo");
     const levelSelect = document.getElementById("levelSelect");
     const levelInfo = document.getElementById("levelInfo");
 
     function updateLevelInfo() {
       const levelName = levels[currentLevel].name;
-      const speed = currentLevel === 'L4' ? 'Instant!' : `${levels[currentLevel].delay}ms`;
-      levelInfo.textContent = `Level: ${levelName} (${speed})`;
+      if (currentLevel === 'L3') {
+        levelInfo.textContent = `Level: ${levelName} (Full Sentence Mode)`;
+      } else {
+        const speed = `${levels[currentLevel].delay / 1000}s per word`;
+        levelInfo.textContent = `Level: ${levelName} (${speed})`;
+      }
     }
 
     function initWords() {
       words = sentences[sentenceIndex].split(" ");
       results = Array(words.length).fill(null);
       currentWordIndex = 0;
+      
+      // Auto-mark words with 2 letters or fewer as correct
+      words.forEach((word, index) => {
+        if (word.length <= 2 ) {
+          results[index] = "correct";
+        }
+      });
+      
+      // Find first word that needs validation (more than 2 letters)
+      currentWordIndex = words.findIndex((word, index) => word.length > 2 && results[index] === null);
+      if (currentWordIndex === -1) {
+        // All words are 2 letters or fewer, complete the sentence
+        currentWordIndex = words.length;
+      }
+      
       renderWords();
     }
 
@@ -68,6 +94,7 @@ function App() {
         span.className = "word";
         if (results[i] === "correct") span.classList.add("correct");
         else if (results[i] === "wrong") span.classList.add("wrong");
+        else if (currentLevel === 'L3' && recognizing) span.classList.add("sentence-highlight");
         else if (i === currentWordIndex) span.classList.add("highlight");
         wordsDiv.appendChild(span);
       });
@@ -83,6 +110,7 @@ function App() {
 
     function resetUI() {
       recognizing = false;
+      autoRestartEnabled = false;
       startBtn.textContent = "🎤 Start";
       startBtn.className = "";
       canValidate = false;
@@ -93,6 +121,7 @@ function App() {
     }
 
     async function stopRecognition() {
+      autoRestartEnabled = false;
       if (recognizing) {
         try {
           if (isCapacitor && speechRecognition) {
@@ -107,38 +136,8 @@ function App() {
       resetUI();
     }
 
-    // Capacitor Speech Recognition Setup
-    async function initCapacitorSpeech() {
-      try {
-        const { SpeechRecognition } = await import('@capacitor-community/speech-recognition');
-        speechRecognition = SpeechRecognition;
-        
-        // Request permissions
-        const permissions = await speechRecognition.requestPermissions();
-        if (permissions.speechRecognition !== 'granted') {
-          throw new Error('Speech recognition permission not granted');
-        }
-
-        // Check availability
-        const available = await speechRecognition.available();
-        if (!available.available) {
-          throw new Error('Speech recognition not available');
-        }
-
-        return true;
-      } catch (e) {
-        console.log("Capacitor speech not available:", e);
-        return false;
-      }
-    }
-
-    // Enhanced mobile speech recognition with shorter listening sessions
+    // Mobile-optimized continuous speech recognition
     async function startMobileSpeechRecognition() {
-      if (isCapacitor && speechRecognition) {
-        return await startCapacitorRecognition();
-      }
-      
-      // Mobile web speech recognition - shorter sessions
       if (!recognition) {
         showError("Speech recognition not supported.");
         return false;
@@ -156,73 +155,32 @@ function App() {
           restartTimeout = null;
         }
 
-        // Mobile-specific settings for better reliability
-        recognition.continuous = false; // Short sessions for mobile
-        recognition.interimResults = false; // Disable interim for mobile
-        recognition.maxAlternatives = 3; // More alternatives for mobile
+        // Mobile-optimized settings for continuous recognition
+        recognition.continuous = true; // Enable continuous for mobile too
+        recognition.interimResults = false; // Keep false for stability
+        recognition.maxAlternatives = 1;
+        recognition.lang = "en-US";
 
         recognizing = true;
+        autoRestartEnabled = true; // Enable auto-restart for mobile
         startTime = Date.now();
-        canValidate = false;
+        canValidate = true; // Enable validation quickly for mobile
         
         startBtn.textContent = "🛑 Stop";
         startBtn.className = "stop-btn";
-        scoreDiv.textContent = "🎤 Starting...";
+        
+        if (currentLevel === 'L3') {
+          scoreDiv.textContent = `🎤 Read the full sentence: "${sentences[sentenceIndex]}"`;
+          renderWords();
+        } else {
+          scoreDiv.textContent = `🎤 Say: "${words[currentWordIndex]}"`;
+        }
         
         recognition.start();
-        
-        // Shorter delay for mobile
-        setTimeout(() => {
-          canValidate = true;
-          if (recognizing) {
-            scoreDiv.textContent = `🎤 Say: "${words[currentWordIndex]}"`;
-          }
-        }, levels[currentLevel].delay);
         
         return true;
       } catch (e) {
         showError("Failed to start: " + e.message);
-        resetUI();
-        return false;
-      }
-    }
-
-    // Capacitor Speech Recognition Start
-    async function startCapacitorRecognition() {
-      if (!speechRecognition) return false;
-      
-      try {
-        const options = {
-          language: 'en-US',
-          maxResults: 5,
-          prompt: `Say: "${words[currentWordIndex]}"`,
-          partialResults: false, // Disable for consistency
-          popup: false
-        };
-
-        recognizing = true;
-        startTime = Date.now();
-        canValidate = true;
-        
-        startBtn.textContent = "🛑 Stop";
-        startBtn.className = "stop-btn";
-        scoreDiv.textContent = `🎤 Listening... Say: "${words[currentWordIndex]}"`;
-
-        const result = await speechRecognition.listen(options);
-        
-        if (result && result.matches && result.matches.length > 0) {
-          const transcript = result.matches[0];
-          console.log("Capacitor transcript:", transcript);
-          window.validateWord(transcript);
-        } else {
-          showError("No speech detected. Try again.");
-          resetUI();
-        }
-        
-        return true;
-      } catch (e) {
-        console.log("Capacitor recognition error:", e);
-        showError("Speech error: " + e.message);
         resetUI();
         return false;
       }
@@ -234,8 +192,7 @@ function App() {
         return;
       }
 
-      // Different approach for mobile vs desktop
-      if (isMobile || isCapacitor) {
+      if (isMobile) {
         await startMobileSpeechRecognition();
       } else {
         startDesktopRecognition();
@@ -255,12 +212,13 @@ function App() {
           restartTimeout = null;
         }
 
-        // Desktop settings - continuous listening
+        // Desktop settings
         recognition.continuous = true;
-        recognition.interimResults = true;
+        recognition.interimResults = currentLevel === 'L3';
         recognition.maxAlternatives = 1;
 
         recognizing = true;
+        autoRestartEnabled = true;
         startTime = Date.now();
         canValidate = false;
         
@@ -270,11 +228,15 @@ function App() {
         
         recognition.start();
         
-        // Level-based delay
         setTimeout(() => {
           canValidate = true;
           if (recognizing) {
-            scoreDiv.textContent = `🎤 Say: "${words[currentWordIndex]}"`;
+            if (currentLevel === 'L3') {
+              scoreDiv.textContent = `🎤 Read the full sentence: "${sentences[sentenceIndex]}"`;
+              renderWords();
+            } else {
+              scoreDiv.textContent = `🎤 Say: "${words[currentWordIndex]}"`;
+            }
           }
         }, levels[currentLevel].delay);
         
@@ -284,30 +246,51 @@ function App() {
       }
     }
 
+    // Enhanced validation with better mobile matching
     window.validateWord = function (spoken) {
-      if (!canValidate || currentWordIndex >= words.length) return;
+      if (!canValidate || currentWordIndex >= words.length || currentLevel === 'L3') return;
       
       const expected = words[currentWordIndex].toLowerCase();
       const spokenLower = spoken.toLowerCase().trim();
       const spokenWords = spokenLower.split(/\s+/);
       
-      // Enhanced matching for mobile/Capacitor
+      console.log(`Validating word ${currentWordIndex}: spoken="${spokenLower}", expected="${expected}"`);
+      
+      // Enhanced matching logic - more lenient for mobile
       const matched = spokenWords.some(word => {
-        return word === expected || 
-               word.includes(expected) || 
-               expected.includes(word) ||
-               (word.length >= 3 && expected.length >= 3 && 
-                (word.startsWith(expected.substring(0, 3)) || 
-                 expected.startsWith(word.substring(0, 3)))) ||
-               // Phonetic similarity for common speech recognition errors
-               (word.replace(/s$/i, '') === expected.replace(/s$/i, '')) ||
-               (word.replace(/ed$/i, '') === expected.replace(/ed$/i, ''));
+        // Exact match
+        if (word === expected) return true;
+        
+        // Contains match (both directions)
+        if (word.includes(expected) || expected.includes(word)) return true;
+        
+        // Partial match for longer words (more lenient)
+        if (word.length >= 2 && expected.length >= 2) {
+          if (word.substring(0, Math.min(3, word.length)) === expected.substring(0, Math.min(3, expected.length))) return true;
+        }
+        
+        // Remove common suffixes and prefixes
+        const wordBase = word.replace(/s$|ed$|ing$|ly$/i, '');
+        const expectedBase = expected.replace(/s$|ed$|ing$|ly$/i, '');
+        if (wordBase === expectedBase || wordBase.includes(expectedBase) || expectedBase.includes(wordBase)) return true;
+        
+        // Phonetic similarity (enhanced)
+        const wordPhonetic = word.replace(/ph/g, 'f').replace(/th/g, 't').replace(/ck/g, 'k');
+        const expectedPhonetic = expected.replace(/ph/g, 'f').replace(/th/g, 't').replace(/ck/g, 'k');
+        if (wordPhonetic === expectedPhonetic) return true;
+        
+        // Sound-like matches
+        if (word.length >= 3 && expected.length >= 3) {
+          const similarity = getSimilarity(word, expected);
+          if (similarity > 0.6) return true; // 60% similarity threshold
+        }
+        
+        return false;
       });
       
       results[currentWordIndex] = matched ? "correct" : "wrong";
       
-      // Show result immediately for expert level, or with brief delay for others
-      const resultDisplayDelay = currentLevel === 'L4' ? 1 : 500;
+      const resultDisplayDelay = isMobile ? 100 : 200; // Faster feedback on mobile
       
       setTimeout(() => {
         scoreDiv.textContent = matched
@@ -315,58 +298,177 @@ function App() {
           : `❌ Said "${spokenLower}", expected "${expected}"`;
       }, resultDisplayDelay);
       
-      currentWordIndex++;
+      // Move to next word that needs validation (skip 2-letter words)
+      do {
+        currentWordIndex++;
+      } while (currentWordIndex < words.length && words[currentWordIndex].length <= 2);
+      
       renderWords();
 
-    if (currentWordIndex >= words.length) {
-  // Sentence complete
-  setTimeout(() => {
-    stopRecognition();
-    const score = results.filter((r) => r === "correct").length;
-    const totalWords = words.length;
-    
-    // Get incorrect words
-    const incorrectWords = words.filter((word, index) => results[index] === "wrong");
-    
-    scoreDiv.textContent = `🎉 Score: ${score}/${totalWords}`;
-    
-    // Check if there are incorrect words and ask for retry
-    if (incorrectWords.length > 0) {
-      setTimeout(() => {
-        if (!incorrectHandler) {
-          incorrectHandler = new IncorrectWordHandler();
-        }
-        
-        incorrectHandler.init(incorrectWords, () => {
-          // This callback runs after retry is complete or skipped
-          nextBtn.style.display = sentenceIndex < sentences.length - 1 ? "inline-block" : "none";
-          incorrectHandler = null;
-        });
-      }, 1000);
-    } else {
-      // No incorrect words, show next button directly
-      nextBtn.style.display = sentenceIndex < sentences.length - 1 ? "inline-block" : "none";
-    }
-  }, resultDisplayDelay);
-  return;
-}
-      // Continue to next word with level-based delay
+      if (currentWordIndex >= words.length) {
+        // Sentence complete - stop everything
+        autoRestartEnabled = false; // Stop auto-restart
+        setTimeout(() => {
+          stopRecognition();
+          const score = results.filter((r) => r === "correct").length;
+          const totalWords = words.length;
+          
+          const incorrectWords = words.filter((word, index) => results[index] === "wrong");
+          
+          scoreDiv.textContent = `🎉 Score: ${score}/${totalWords}`;
+          
+          if (incorrectWords.length > 0) {
+            setTimeout(() => {
+              if (!incorrectHandler) {
+                incorrectHandler = new IncorrectWordHandler();
+              }
+              
+              incorrectHandler.init(incorrectWords, () => {
+                nextBtn.style.display = sentenceIndex < sentences.length - 1 ? "inline-block" : "none";
+                incorrectHandler = null;
+              });
+            }, 1000);
+          } else {
+            nextBtn.style.display = sentenceIndex < sentences.length - 1 ? "inline-block" : "none";
+          }
+        }, resultDisplayDelay);
+        return;
+      }
+
+      // Keep microphone active for next word
+      console.log(`Moving to next word ${currentWordIndex}: "${words[currentWordIndex]}"`);
+      
+      // Show next word prompt immediately
       const totalDelay = resultDisplayDelay + levels[currentLevel].nextWordDelay;
       setTimeout(() => {
         if (recognizing && currentWordIndex < words.length) {
           scoreDiv.textContent = `🎤 Say: "${words[currentWordIndex]}"`;
-          
-          // For mobile, restart recognition for next word
-          if (isMobile && !isCapacitor && recognition) {
-            try {
-              recognition.start();
-            } catch (e) {
-              console.log("Restart error:", e);
-            }
-          }
+          console.log("Ready for next word, mic should be active");
         }
       }, totalDelay);
     };
+
+    // Similarity function for better word matching
+    function getSimilarity(s1, s2) {
+      let longer = s1;
+      let shorter = s2;
+      if (s1.length < s2.length) {
+        longer = s2;
+        shorter = s1;
+      }
+      const editDistance = getEditDistance(longer, shorter);
+      return (longer.length - editDistance) / longer.length;
+    }
+
+    function getEditDistance(s1, s2) {
+      const matrix = [];
+      for (let i = 0; i <= s2.length; i++) {
+        matrix[i] = [i];
+      }
+      for (let j = 0; j <= s1.length; j++) {
+        matrix[0][j] = j;
+      }
+      for (let i = 1; i <= s2.length; i++) {
+        for (let j = 1; j <= s1.length; j++) {
+          if (s2.charAt(i - 1) === s1.charAt(j - 1)) {
+            matrix[i][j] = matrix[i - 1][j - 1];
+          } else {
+            matrix[i][j] = Math.min(
+              matrix[i - 1][j - 1] + 1,
+              matrix[i][j - 1] + 1,
+              matrix[i - 1][j] + 1
+            );
+          }
+        }
+      }
+      return matrix[s2.length][s1.length];
+    }
+
+    // Improved expert level full sentence validation
+    window.validateFullSentence = function (spoken) {
+      if (!canValidate || currentLevel !== 'L3') return;
+      
+      const spokenWords = spoken.toLowerCase().trim().split(/\s+/);
+      const expectedWords = words.map(w => w.toLowerCase());
+      
+      console.log("Spoken words:", spokenWords.length, spokenWords);
+      console.log("Expected words:", expectedWords.length, expectedWords);
+      
+      // Stop mic immediately
+      stopRecognition();
+      
+      // More intelligent word alignment for expert level
+      const alignedResults = alignWords(spokenWords, expectedWords);
+      
+      // Apply results
+      expectedWords.forEach((expectedWord, index) => {
+        if (results[index] !== "correct") { // Don't override auto-correct 2-letter words
+          results[index] = alignedResults[index] ? "correct" : "wrong";
+        }
+      });
+      
+      currentWordIndex = words.length;
+      renderWords();
+      
+      const score = results.filter((r) => r === "correct").length;
+      const totalWords = words.length;
+      scoreDiv.textContent = `🎉 Expert Score: ${score}/${totalWords}`;
+      
+      // Handle incorrect words for expert level too
+      const incorrectWords = words.filter((word, index) => results[index] === "wrong");
+      
+      if (incorrectWords.length > 0) {
+        setTimeout(() => {
+          if (!incorrectHandler) {
+            incorrectHandler = new IncorrectWordHandler();
+          }
+          
+          incorrectHandler.init(incorrectWords, () => {
+            nextBtn.style.display = sentenceIndex < sentences.length - 1 ? "inline-block" : "none";
+            incorrectHandler = null;
+          });
+        }, 1000);
+      } else {
+        nextBtn.style.display = sentenceIndex < sentences.length - 1 ? "inline-block" : "none";
+      }
+    };
+
+    // Smart word alignment for expert mode
+    function alignWords(spoken, expected) {
+      const results = new Array(expected.length).fill(false);
+      const usedSpoken = new Array(spoken.length).fill(false);
+      
+      // First pass: exact matches
+      for (let i = 0; i < expected.length; i++) {
+        for (let j = 0; j < spoken.length; j++) {
+          if (!usedSpoken[j] && spoken[j] === expected[i]) {
+            results[i] = true;
+            usedSpoken[j] = true;
+            break;
+          }
+        }
+      }
+      
+      // Second pass: similarity matches
+      for (let i = 0; i < expected.length; i++) {
+        if (!results[i]) {
+          for (let j = 0; j < spoken.length; j++) {
+            if (!usedSpoken[j]) {
+              const similarity = getSimilarity(spoken[j], expected[i]);
+              if (similarity > 0.5 || // 50% similarity
+                  spoken[j].includes(expected[i]) || 
+                  expected[i].includes(spoken[j])) {
+                results[i] = true;
+                usedSpoken[j] = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      return results;
+    }
 
     window.nextSentence = function () {
       if (sentenceIndex < sentences.length - 1) {
@@ -384,6 +486,8 @@ function App() {
       if (recognizing) {
         stopRecognition();
       }
+      // Reset current sentence for new level
+      initWords();
     };
 
     const handleFileUpload = (e) => {
@@ -403,137 +507,133 @@ function App() {
     };
 
     async function setupSpeechRecognition() {
-      // Check if running in Capacitor
-      isCapacitor = checkCapacitor();
-      
-      if (isCapacitor) {
-        console.log("Running in Capacitor app");
-        const capacitorReady = await initCapacitorSpeech();
-        if (capacitorReady) {
-          browserInfoDiv.textContent = "📱 Capacitor App: Tap Start → Speak clearly";
-          initWords();
-          updateLevelInfo();
-          return;
-        } else {
-          console.log("Capacitor speech failed, falling back to web");
-        }
-      }
-
-      // Fallback to web speech recognition
+      // Web speech recognition setup
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) {
         showError("Speech recognition not supported in this browser.");
         startBtn.disabled = true;
-        browserInfoDiv.textContent = "❌ Speech recognition not supported";
         return;
       }
 
       recognition = new SR();
       recognition.lang = "en-US";
-      
-      if (isMobile) {
-        browserInfoDiv.textContent = "📱 Mobile: Tap Start → Speak word → Auto-restart";
-        // Mobile-specific settings
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.maxAlternatives = 3;
-      } else {
-        browserInfoDiv.textContent = "🖥️ Desktop: Click Start → Continuous listening";
-        // Desktop settings
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.maxAlternatives = 1;
-      }
 
       recognition.onstart = () => {
-        console.log("Recognition started");
+        console.log("Recognition started for word:", currentWordIndex < words.length ? words[currentWordIndex] : "complete");
         recognizing = true;
         startTime = Date.now();
-        startBtn.textContent = "🛑 Stop";
-        startBtn.className = "stop-btn";
         
-        scoreDiv.textContent = "🎤 Starting...";
+        // Only update UI if this is the initial start (not auto-restart)
+        if (startBtn.textContent !== "🛑 Stop") {
+          startBtn.textContent = "🛑 Stop";
+          startBtn.className = "stop-btn";
+        }
+        
+        // Faster start for mobile
+        const startDelay = isMobile ? 50 : levels[currentLevel].delay;
+        
         setTimeout(() => {
           canValidate = true;
           if (recognizing) {
-            scoreDiv.textContent = `🎤 Say: "${words[currentWordIndex]}"`;
+            if (currentLevel === 'L3') {
+              scoreDiv.textContent = `🎤 Read the full sentence: "${sentences[sentenceIndex]}"`;
+              renderWords();
+            } else if (currentWordIndex < words.length) {
+              scoreDiv.textContent = `🎤 Say: "${words[currentWordIndex]}"`;
+            }
           }
-        }, levels[currentLevel].delay);
+        }, startDelay);
       };
 
       recognition.onerror = (e) => {
-        console.log("Web recognition error:", e.error);
+        console.log("Recognition error:", e.error, "auto-restart:", autoRestartEnabled);
         
         const errorMessages = {
-          'no-speech': "No speech detected. Try speaking louder.",
-          'audio-capture': "Microphone not accessible. Check permissions.",
-          'not-allowed': "Microphone permission denied. Please allow and refresh.",
-          'network': "Network error. Check your connection.",
-          
+          'no-speech': "No speech detected. Trying again...",
+          'audio-capture': "Microphone not accessible. Please check permissions.",
+          'not-allowed': "Microphone permission denied. Please allow and refresh the page.",
+          'network': "Network error. Check your internet connection.",
+          'aborted': "Speech recognition was stopped.",
         };
         
-        const message = errorMessages[e.error] || `Error: ${e.error}. Try again.`;
-        if (message) showError(message);
-        
-        resetUI();
-      };
-
-      recognition.onend = () => {
-        console.log("Recognition ended");
-        
-        // Different behavior for mobile vs desktop
-        if (isMobile) {
-          // Mobile: only restart if we're still in the middle of a sentence
-          if (recognizing && currentWordIndex < words.length) {
-            // Don't auto-restart immediately, wait for next word timing
-            console.log("Mobile: Waiting for next word timing");
-          } else if (recognizing) {
-            resetUI();
-          }
-        } else {
-          // Desktop: auto-restart for continuous listening
-          if (recognizing && currentWordIndex < words.length) {
-            restartTimeout = setTimeout(() => {
-              if (recognizing) {
-                try {
-                  recognition.start();
-                  console.log("Auto-restarted recognition");
-                } catch (e) {
-                  console.log("Restart error:", e);
-                  resetUI();
-                }
+        // Force restart on no-speech for mobile
+        if (e.error === 'no-speech' && autoRestartEnabled && currentWordIndex < words.length) {
+          console.log("No speech detected, forcing restart...");
+          recognizing = false; // Reset flag
+          
+          setTimeout(() => {
+            if (autoRestartEnabled && !recognizing && currentWordIndex < words.length) {
+              try {
+                recognizing = true;
+                recognition.start();
+                console.log("Force restarted after no-speech");
+              } catch (err) {
+                console.log("Force restart failed:", err);
+                recognizing = false;
+                showError("Microphone stopped. Please click Start again.");
+                resetUI();
               }
-            }, 100);
-          } else if (recognizing) {
+            }
+          }, isMobile ? 200 : 500);
+        } 
+        // Handle aborted gracefully
+        else if (e.error === 'aborted') {
+          recognizing = false;
+          if (!autoRestartEnabled) {
             resetUI();
           }
         }
+        // Show error for other cases
+        else {
+          const message = errorMessages[e.error] || `Error: ${e.error}. Please try again.`;
+          showError(message);
+          resetUI();
+        }
       };
+
+      recognition.onend = () => {
+  console.log("Recognition ended, auto-restart:", autoRestartEnabled, "current word:", currentWordIndex, "recognizing:", recognizing);
+
+  if (autoRestartEnabled && currentWordIndex < words.length) {
+    recognizing = false;
+
+    setTimeout(() => {
+      if (!recognizing && autoRestartEnabled && currentWordIndex < words.length) {
+        try {
+          recognition.start();
+          recognizing = true;
+          console.log("✅ Auto-restarted mic for next word.");
+        } catch (err) {
+          console.error("❌ Mic restart failed:", err);
+          resetUI();
+        }
+      }
+    }, 200); // Small delay before restart
+  } else {
+    resetUI();
+  }
+};
+
 
       recognition.onresult = (e) => {
         if (!canValidate || !recognizing) return;
         
         let finalTranscript = "";
-        let interimTranscript = "";
         
         for (let i = e.resultIndex; i < e.results.length; i++) {
           const transcript = e.results[i][0].transcript;
           if (e.results[i].isFinal) {
             finalTranscript += transcript + " ";
-          } else {
-            interimTranscript += transcript + " ";
           }
         }
         
-        // Process final results immediately
         if (finalTranscript.trim()) {
           console.log("Final transcript:", finalTranscript.trim());
-          window.validateWord(finalTranscript.trim());
-        }
-        // Show interim results for feedback (desktop only)
-        else if (interimTranscript.trim() && !isMobile) {
-          console.log("Interim:", interimTranscript.trim());
-          scoreDiv.textContent = `🎤 Hearing: "${interimTranscript.trim()}"`;
+          if (currentLevel === 'L3') {
+            window.validateFullSentence(finalTranscript.trim());
+          } else {
+            window.validateWord(finalTranscript.trim());
+          }
         }
       };
 
@@ -542,7 +642,6 @@ function App() {
         uploadInput.addEventListener("change", handleFileUpload);
       }
       
-      // Setup level selector
       if (levelSelect) {
         levelSelect.addEventListener("change", (e) => {
           window.changeLevel(e.target.value);
@@ -553,16 +652,15 @@ function App() {
       updateLevelInfo();
     }
 
-    // Initialize everything
     setupSpeechRecognition();
     
     // Cleanup
     return () => {
-      if (isCapacitor && speechRecognition) {
-        try {
-          speechRecognition.stop();
-        } catch (e) {}
-      } else if (recognition) {
+      autoRestartEnabled = false;
+      if (incorrectHandler) {
+        incorrectHandler.cleanup();
+      }
+      if (recognition) {
         try {
           recognition.abort();
         } catch (e) {}
@@ -571,23 +669,6 @@ function App() {
         clearTimeout(restartTimeout);
       }
     };
-    return () => {
-  if (incorrectHandler) {
-    incorrectHandler.cleanup();
-  }
-  if (isCapacitor && speechRecognition) {
-    try {
-      speechRecognition.stop();
-    } catch (e) {}
-  } else if (recognition) {
-    try {
-      recognition.abort();
-    } catch (e) {}
-  }
-  if (restartTimeout) {
-    clearTimeout(restartTimeout);
-  }
-};
     
   }, []);
 
@@ -596,23 +677,23 @@ function App() {
       <h1 style={{ textAlign: "center", color: "#333" }}>👧👦 Kids Speech Buddy 🎤</h1>
       <p style={{ textAlign: "center", color: "#666" }}>Say the word you see highlighted!</p>
       
+      {/* Mobile Instructions */}
+      <div style={{ textAlign: "center", marginBottom: "15px", padding: "10px", backgroundColor: "#e8f5e8", borderRadius: "5px", fontSize: "14px" }}>
+        📱 <strong>Mobile Users:</strong> Click "Start" once - speak all words continuously!
+      </div>
+      
       {/* Level Selector */}
       <div style={{ textAlign: "center", marginBottom: "20px" }}>
         <label htmlFor="levelSelect" style={{ marginRight: "10px", fontWeight: "bold" }}>Choose Level:</label>
         <select id="levelSelect" defaultValue="L1" style={{ padding: "5px", fontSize: "16px" }}>
-          <option value="L1">L1 - Beginner (800ms)</option>
-          <option value="L2">L2 - Faster (600ms)</option>
-          <option value="L3">L3 - Advanced (400ms)</option>
-          <option value="L4">L4 - Expert (Instant!)</option>
+          <option value="L1">Beginner (0.5s per word)</option>
+          <option value="L2">Advance (0.3s per word)</option>
+          <option value="L3">Expert (Full Sentence)</option>
         </select>
       </div>
       
       <div id="levelInfo" style={{ textAlign: "center", marginBottom: "15px", fontWeight: "bold", color: "#007bff" }}>
-        Level: Beginner (800ms response)
-      </div>
-      
-      <div id="browserInfo" style={{ textAlign: "center", marginBottom: "15px", padding: "10px", backgroundColor: "#e7f3ff", borderRadius: "5px", color: "#0066cc" }}>
-        Loading...
+        Level: Beginner (0.5s per word)
       </div>
       
       <div id="errorMessage" style={{ display: "none", textAlign: "center", marginBottom: "15px", padding: "10px", backgroundColor: "#ffe6e6", borderRadius: "5px", color: "#cc0000" }}>
@@ -657,6 +738,11 @@ function App() {
           background-color: #fff3cd;
           border-color: #ffc107;
           transform: scale(1.1);
+          font-weight: bold;
+        }
+        .word.sentence-highlight {
+          background-color: #e3f2fd;
+          border-color: #2196f3;
           font-weight: bold;
         }
         .word.correct {
