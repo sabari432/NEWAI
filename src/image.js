@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Upload, Camera, BookOpen, Mic, Play, Volume2, ArrowLeft } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Upload, Camera, BookOpen, Mic, Play, Volume2, ArrowLeft, X } from 'lucide-react';
 
 const ImageUpload = ({ onTextExtracted, onBack }) => {
   const [selectedImage, setSelectedImage] = useState(null);
@@ -7,6 +7,12 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [showPractice, setShowPractice] = useState(false);
+  
+  // Camera states
+  const [showCamera, setShowCamera] = useState(false);
+  const [stream, setStream] = useState(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
 
   // Speech recognition state (same as app.js)
   const [speechState, setSpeechState] = useState({
@@ -27,6 +33,15 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
     }
   }, [showPractice, extractedText]);
 
+  // Cleanup camera stream when component unmounts or camera closes
+  useEffect(() => {
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [stream]);
+
   const handleImageSelect = (event) => {
     const file = event.target.files[0];
     if (file) {
@@ -35,8 +50,71 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
     }
   };
 
-  const handleImageUpload = async () => {
-    if (!selectedImage) {
+  // Camera functions
+  const openCamera = async () => {
+    try {
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: 'environment' // Use back camera on mobile if available
+        } 
+      });
+      setStream(mediaStream);
+      setShowCamera(true);
+      setError('');
+      
+      // Set video stream when camera opens
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = mediaStream;
+        }
+      }, 100);
+    } catch (err) {
+      setError('Camera access denied or not available: ' + err.message);
+    }
+  };
+
+  const closeCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    setShowCamera(false);
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    const context = canvas.getContext('2d');
+
+    // Set canvas dimensions to match video
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    // Draw video frame to canvas
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    // Convert canvas to blob
+    canvas.toBlob((blob) => {
+      if (blob) {
+        // Create a File object from the blob
+        const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
+        setSelectedImage(file);
+        closeCamera();
+        
+        // Automatically process the captured image
+        setTimeout(() => {
+          handleImageUpload(file);
+        }, 500);
+      }
+    }, 'image/jpeg', 0.8);
+  };
+
+  const handleImageUpload = async (imageFile = null) => {
+    const fileToUpload = imageFile || selectedImage;
+    
+    if (!fileToUpload) {
       setError('Please select an image first');
       return;
     }
@@ -46,7 +124,7 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
 
     try {
       const formData = new FormData();
-      formData.append('file', selectedImage);
+      formData.append('file', fileToUpload);
       formData.append('language', 'eng');
       formData.append('isOverlayRequired', 'false');
       formData.append('detectOrientation', 'false');
@@ -392,6 +470,106 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
     }
   };
 
+  // Camera view
+  if (showCamera) {
+    return (
+      <div className="camera-view">
+        <div className="camera-header">
+          <button className="close-camera-btn" onClick={closeCamera}>
+            <X size={20} /> Close Camera
+          </button>
+          <h2>📷 Take Photo</h2>
+        </div>
+        
+        <div className="camera-container">
+          <video 
+            ref={videoRef} 
+            autoPlay 
+            playsInline
+            className="camera-video"
+          />
+          <canvas 
+            ref={canvasRef} 
+            style={{ display: 'none' }}
+          />
+        </div>
+        
+        <div className="camera-controls">
+          <button className="capture-btn" onClick={capturePhoto}>
+            📸 Capture Photo
+          </button>
+        </div>
+        
+        <style jsx>{`
+          .camera-view {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+          }
+          
+          .camera-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+          }
+          
+          .close-camera-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 15px;
+            background: #ff4757;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+          }
+          
+          .close-camera-btn:hover {
+            background: #ff3742;
+          }
+          
+          .camera-container {
+            position: relative;
+            margin-bottom: 20px;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+          }
+          
+          .camera-video {
+            width: 100%;
+            height: auto;
+            max-height: 400px;
+            object-fit: cover;
+          }
+          
+          .camera-controls {
+            display: flex;
+            justify-content: center;
+          }
+          
+          .capture-btn {
+            padding: 15px 30px;
+            background: #2ed573;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            cursor: pointer;
+            font-weight: bold;
+          }
+          
+          .capture-btn:hover {
+            background: #26d063;
+          }
+        `}</style>
+      </div>
+    );
+  }
+
   if (showPractice) {
     return (
       <div className="image-practice-view">
@@ -458,432 +636,256 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
             {speechState.recognizing ? '🛑 Stop' : '🎤 Start'}
           </button>
         </div>
-
-        <style jsx>{`
-          .image-practice-view {
-            max-width: 800px;
-            margin: 0 auto;
-            background: rgba(255, 255, 255, 0.95);
-            border-radius: 20px;
-            padding: 30px;
-            color: #333;
-            min-height: 80vh;
-          }
-
-          .practice-header {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            margin-bottom: 20px;
-          }
-
-          .back-btn {
-            background: #6c757d;
-            color: white;
-            border: none;
-            padding: 10px 15px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 500;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-          }
-
-          .practice-header h2 {
-            margin: 0;
-            color: #333;
-            text-align: center;
-            flex: 1;
-          }
-
-          .mobile-instructions {
-            text-align: center;
-            margin-bottom: 15px;
-            padding: 10px;
-            background: #e8f5e8;
-            border-radius: 8px;
-            font-size: 14px;
-          }
-
-          .level-selector-container {
-            text-align: center;
-            margin-bottom: 20px;
-          }
-
-          .level-selector-container label {
-            margin-right: 10px;
-            font-weight: bold;
-          }
-
-          .level-selector-container select {
-            padding: 8px 12px;
-            font-size: 16px;
-            border-radius: 6px;
-            border: 1px solid #ddd;
-          }
-
-          .level-info {
-            text-align: center;
-            margin-bottom: 15px;
-            font-weight: bold;
-            color: #007bff;
-          }
-
-          .error-message {
-            text-align: center;
-            margin-bottom: 15px;
-            padding: 10px;
-            background: #ffe6e6;
-            border-radius: 8px;
-            color: #cc0000;
-          }
-
-          .words-container {
-            text-align: center;
-            margin-bottom: 20px;
-            font-size: 20px;
-            line-height: 1.8;
-            max-height: 400px;
-            overflow-y: auto;
-            border: 1px solid #ddd;
-            padding: 20px;
-            border-radius: 10px;
-            background: #fafafa;
-          }
-
-          .word {
-            display: inline-block;
-            margin: 3px 4px;
-            padding: 6px 10px;
-            border-radius: 6px;
-            background: #f8f9fa;
-            border: 2px solid #dee2e6;
-            transition: all 0.3s ease;
-          }
-
-          .word.highlight {
-            background: #fff3cd;
-            border-color: #ffc107;
-            transform: scale(1.1);
-            font-weight: bold;
-          }
-
-          .word.correct {
-            background: #d4edda;
-            border-color: #28a745;
-            color: #155724;
-          }
-
-          .word.wrong {
-            background: #f8d7da;
-            border-color: #dc3545;
-            color: #721c24;
-          }
-
-          .score-display {
-            text-align: center;
-            margin-bottom: 20px;
-            font-size: 18px;
-            font-weight: bold;
-            min-height: 25px;
-          }
-
-          .practice-controls {
-            text-align: center;
-          }
-
-          .start-button {
-            padding: 15px 30px;
-            font-size: 18px;
-            border: none;
-            border-radius: 10px;
-            background: #007bff;
-            color: white;
-            cursor: pointer;
-            transition: all 0.2s ease;
-          }
-
-          .start-button.stop-btn {
-            background: #dc3545;
-          }
-
-          .start-button:hover {
-            opacity: 0.9;
-          }
-
-          .start-button:active {
-            transform: scale(0.98);
-          }
-        `}</style>
       </div>
     );
   }
 
+  // Main upload view
   return (
     <div className="image-upload-container">
       <div className="upload-header">
         <button className="back-btn" onClick={onBack}>
-          <ArrowLeft size={16} /> Back to Dashboard
+          <ArrowLeft size={16} /> Back
         </button>
-        <h2>📚 Upload Your Book</h2>
+        <h2>📷 Upload or Capture Image</h2>
       </div>
 
-      <div className="upload-section">
-        <div className="upload-area">
-          <div className="upload-icon">
-            <Camera size={48} />
-          </div>
-          <h3>Take a photo or upload an image</h3>
-          <p>Upload a clear photo of any book page and we'll extract the text for reading practice</p>
-          
+      <div className="upload-options">
+        {/* File Upload */}
+        <div className="upload-option">
+          <label htmlFor="imageInput" className="upload-label">
+            <Upload size={24} />
+            Choose Image File
+          </label>
           <input
+            id="imageInput"
             type="file"
             accept="image/*"
             onChange={handleImageSelect}
-            className="file-input"
-            id="imageInput"
+            style={{ display: 'none' }}
           />
-          <label htmlFor="imageInput" className="upload-btn">
-            <Upload size={20} />
-            Choose Image
-          </label>
-          
-          {selectedImage && (
-            <div className="selected-image">
-              <img 
-                src={URL.createObjectURL(selectedImage)} 
-                alt="Selected" 
-                className="preview-image"
-              />
-              <p>Selected: {selectedImage.name}</p>
-            </div>
-          )}
         </div>
 
-        <div className="action-buttons">
-          <button 
-            className="extract-btn"
-            onClick={handleImageUpload}
-            disabled={!selectedImage || isLoading}
-          >
-            {isLoading ? 'Extracting Text...' : 'Extract Text'}
+        {/* Camera Button */}
+        <div className="upload-option">
+          <button className="camera-btn" onClick={openCamera}>
+            <Camera size={24} />
+            Take Photo
           </button>
         </div>
-
-        {error && (
-          <div className="error-message">
-            {error}
-          </div>
-        )}
-
-        {extractedText && (
-          <div className="extracted-text-section">
-            <h3>📖 Extracted Text</h3>
-            <div className="text-preview">
-              {extractedText}
-            </div>
-            <div className="text-actions">
-              <button className="practice-btn" onClick={startPractice}>
-                <Mic size={20} />
-                Start Reading Practice
-              </button>
-            </div>
-          </div>
-        )}
       </div>
+
+      {selectedImage && (
+        <div className="selected-image">
+          <h3>Selected Image:</h3>
+          <img 
+            src={URL.createObjectURL(selectedImage)} 
+            alt="Selected" 
+            style={{ maxWidth: '300px', maxHeight: '200px', objectFit: 'contain' }}
+          />
+        </div>
+      )}
+
+      {error && (
+        <div className="error-message">
+          {error}
+        </div>
+      )}
+
+      <div className="upload-actions">
+        <button 
+          className="process-btn"
+          onClick={() => handleImageUpload()}
+          disabled={!selectedImage || isLoading}
+        >
+          {isLoading ? '⏳ Processing...' : '🔍 Extract Text'}
+        </button>
+      </div>
+
+      {extractedText && (
+        <div className="extracted-text">
+          <h3>Extracted Text:</h3>
+          <div className="text-content">
+            {extractedText}
+          </div>
+          
+          <button className="practice-btn" onClick={startPractice}>
+            <BookOpen size={16} />
+            Start Reading Practice
+          </button>
+        </div>
+      )}
 
       <style jsx>{`
         .image-upload-container {
           max-width: 800px;
           margin: 0 auto;
-          background: rgba(255, 255, 255, 0.95);
-          border-radius: 20px;
-          padding: 30px;
-          color: #333;
-          min-height: 80vh;
+          padding: 20px;
         }
-
+        
         .upload-header {
           display: flex;
           align-items: center;
-          gap: 20px;
+          gap: 15px;
           margin-bottom: 30px;
         }
-
+        
         .back-btn {
-          background: #6c757d;
-          color: white;
-          border: none;
-          padding: 10px 15px;
-          border-radius: 8px;
-          cursor: pointer;
-          font-weight: 500;
           display: flex;
           align-items: center;
-          gap: 5px;
+          gap: 8px;
+          padding: 10px 15px;
+          background: #74b9ff;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+          font-size: 14px;
         }
-
-        .upload-header h2 {
-          margin: 0;
-          color: #333;
-          text-align: center;
+        
+        .back-btn:hover {
+          background: #0984e3;
+        }
+        
+        .upload-options {
+          display: flex;
+          gap: 20px;
+          justify-content: center;
+          margin-bottom: 30px;
+          flex-wrap: wrap;
+        }
+        
+        .upload-option {
           flex: 1;
+          min-width: 200px;
         }
-
-        .upload-section {
-          text-align: center;
-        }
-
-        .upload-area {
-          border: 2px dashed #007bff;
-          border-radius: 16px;
-          padding: 40px 20px;
-          margin-bottom: 20px;
-          background: #f8f9ff;
-        }
-
-        .upload-icon {
-          color: #007bff;
-          margin-bottom: 20px;
-        }
-
-        .upload-area h3 {
-          margin: 0 0 10px 0;
-          color: #333;
-        }
-
-        .upload-area p {
-          margin: 0 0 20px 0;
-          color: #666;
-          line-height: 1.5;
-        }
-
-        .file-input {
-          display: none;
-        }
-
-        .upload-btn {
-          display: inline-flex;
+        
+        .upload-label, .camera-btn {
+          display: flex;
+          flex-direction: column;
           align-items: center;
           gap: 10px;
-          background: #007bff;
-          color: white;
-          padding: 12px 24px;
-          border-radius: 8px;
+          padding: 30px 20px;
+          border: 2px dashed #74b9ff;
+          border-radius: 12px;
+          background: #f8f9ff;
           cursor: pointer;
+          transition: all 0.3s ease;
+          font-size: 16px;
           font-weight: 500;
-          transition: background-color 0.2s;
+          color: #2d3436;
+          width: 100%;
+          text-align: center;
         }
-
-        .upload-btn:hover {
-          background: #0056b3;
+        
+        .camera-btn {
+          border: 2px dashed #00b894;
+          background: #f0fdf9;
+          color: #2d3436;
         }
-
+        
+        .upload-label:hover, .camera-btn:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .upload-label:hover {
+          border-color: #0984e3;
+          background: #e3f2fd;
+        }
+        
+        .camera-btn:hover {
+          border-color: #00a085;
+          background: #e6fffa;
+        }
+        
         .selected-image {
-          margin-top: 20px;
+          text-align: center;
+          margin: 20px 0;
+          padding: 20px;
+          background: #f8f9fa;
+          border-radius: 12px;
         }
-
-        .preview-image {
-          max-width: 200px;
-          max-height: 200px;
+        
+        .selected-image h3 {
+          margin-bottom: 15px;
+          color: #2d3436;
+        }
+        
+        .error-message {
+          background: #ff7675;
+          color: white;
+          padding: 15px;
           border-radius: 8px;
-          box-shadow: 0 4px 8px rgba(0,0,0,0.1);
-          margin-bottom: 10px;
+          margin: 20px 0;
+          text-align: center;
         }
-
-        .action-buttons {
-          margin-bottom: 20px;
+        
+        .upload-actions {
+          text-align: center;
+          margin: 30px 0;
         }
-
-        .extract-btn {
-          background: #28a745;
+        
+        .process-btn {
+          padding: 15px 30px;
+          background: #00b894;
           color: white;
           border: none;
-          padding: 12px 24px;
-          border-radius: 8px;
+          border-radius: 12px;
+          font-size: 18px;
           cursor: pointer;
-          font-weight: 500;
-          font-size: 16px;
+          font-weight: bold;
+          disabled: opacity 0.6;
         }
-
-        .extract-btn:disabled {
-          background: #6c757d;
+        
+        .process-btn:hover:not(:disabled) {
+          background: #00a085;
+        }
+        
+        .process-btn:disabled {
+          opacity: 0.6;
           cursor: not-allowed;
         }
-
-        .error-message {
-          background: #f8d7da;
-          color: #721c24;
-          padding: 12px;
-          border-radius: 8px;
-          margin-bottom: 20px;
-          border: 1px solid #f5c6cb;
-        }
-
-        .extracted-text-section {
+        
+        .extracted-text {
           margin-top: 30px;
-        }
-
-        .extracted-text-section h3 {
-          margin-bottom: 15px;
-          color: #333;
-        }
-
-        .text-preview {
-          background: white;
-          border: 1px solid #ddd;
-          border-radius: 8px;
           padding: 20px;
-          margin-bottom: 20px;
-          text-align: left;
+          background: #f8f9fa;
+          border-radius: 12px;
+        }
+        
+        .extracted-text h3 {
+          margin-bottom: 15px;
+          color: #2d3436;
+        }
+        
+        .text-content {
+          background: white;
+          padding: 20px;
+          border-radius: 8px;
           line-height: 1.6;
+          margin-bottom: 20px;
+          border: 1px solid #e9ecef;
           max-height: 300px;
           overflow-y: auto;
-          font-size: 16px;
         }
-
-        .text-actions {
-          display: flex;
-          justify-content: center;
-          gap: 15px;
-        }
-
+        
         .practice-btn {
           display: flex;
           align-items: center;
-          gap: 10px;
-          background: #28a745;
+          gap: 8px;
+          padding: 12px 24px;
+          background: #6c5ce7;
           color: white;
           border: none;
-          padding: 12px 24px;
           border-radius: 8px;
           cursor: pointer;
-          font-weight: 500;
           font-size: 16px;
+          font-weight: 500;
         }
-
+        
         .practice-btn:hover {
-          background: #218838;
-        }
-
-        @media (max-width: 768px) {
-          .image-upload-container {
-            padding: 20px;
-          }
-
-          .upload-header {
-            flex-direction: column;
-            gap: 15px;
-          }
-
-          .upload-area {
-            padding: 30px 15px;
-          }
-
-          .text-actions {
-            flex-direction: column;
-          }
+          background: #5f3dc4;
         }
       `}</style>
     </div>

@@ -2,17 +2,9 @@ import React, { useEffect, useState } from "react";
 import { Star, Trophy, BookOpen, Mic, Calendar, Zap, Award, Target, Play, Volume2 } from "lucide-react";
 import ImageUpload from './image.js';
 import ReadMyBook from './readbook.js';
+import Warmup from './warmup.js';
+import IncorrectWordsHandler from './incorrect.js'; // Import the correction handler
 import './App.css';
-// Mock IncorrectWordHandler for demo
-const IncorrectWordHandler = class {
-  init(words, callback) {
-    setTimeout(() => {
-      console.log("Incorrect words:", words);
-      callback();
-    }, 1000);
-  }
-  cleanup() {}
-};
 
 function App() {
   const [currentView, setCurrentView] = useState('dashboard');
@@ -36,8 +28,83 @@ function App() {
     score: '',
     errorMessage: ''
   });
+
 const [bookText, setBookText] = useState('');
 const [extractedText, setExtractedText] = useState('');
+
+// Initialize correction handler
+const [correctionHandler] = useState(() => new IncorrectWordsHandler());
+
+// NEW: Cookie management functions for wrong words
+const saveWrongWordsToCookies = (wrongWords, source = 'practice') => {
+  try {
+    const existingData = getWrongWordsFromCookies();
+    const timestamp = new Date().toISOString();
+    
+    wrongWords.forEach(word => {
+      if (!existingData.some(item => item.word.toLowerCase() === word.toLowerCase())) {
+        existingData.push({
+          word: word,
+          timestamp: timestamp,
+          source: source,
+          attempts: 1,
+          difficulty: 'medium' // Can be 'easy', 'medium', 'hard'
+        });
+      } else {
+        // Update existing word attempts
+        const existingWord = existingData.find(item => item.word.toLowerCase() === word.toLowerCase());
+        if (existingWord) {
+          existingWord.attempts += 1;
+          existingWord.timestamp = timestamp;
+          // Increase difficulty based on attempts
+          if (existingWord.attempts >= 3) {
+            existingWord.difficulty = 'hard';
+          } else if (existingWord.attempts >= 2) {
+            existingWord.difficulty = 'medium';
+          }
+        }
+      }
+    });
+    
+    // Keep only the last 50 wrong words to prevent cookie overflow
+    const sortedData = existingData.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 50);
+    
+    document.cookie = `wrongWords=${encodeURIComponent(JSON.stringify(sortedData))}; expires=${new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toUTCString()}; path=/`;
+    
+    console.log('Wrong words saved to cookies:', wrongWords);
+  } catch (error) {
+    console.error('Error saving wrong words to cookies:', error);
+  }
+};
+
+const getWrongWordsFromCookies = () => {
+  try {
+    const cookies = document.cookie.split(';');
+    const wrongWordsCookie = cookies.find(cookie => cookie.trim().startsWith('wrongWords='));
+    
+    if (wrongWordsCookie) {
+      const cookieValue = wrongWordsCookie.split('=')[1];
+      return JSON.parse(decodeURIComponent(cookieValue));
+    }
+    return [];
+  } catch (error) {
+    console.error('Error reading wrong words from cookies:', error);
+    return [];
+  }
+};
+
+const removeWordFromCookies = (wordToRemove) => {
+  try {
+    const existingData = getWrongWordsFromCookies();
+    const updatedData = existingData.filter(item => item.word.toLowerCase() !== wordToRemove.toLowerCase());
+    
+    document.cookie = `wrongWords=${encodeURIComponent(JSON.stringify(updatedData))}; expires=${new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toUTCString()}; path=/`;
+    
+    console.log('Word removed from practice list:', wordToRemove);
+  } catch (error) {
+    console.error('Error removing word from cookies:', error);
+  }
+};
 
 // Add this function to handle text extraction from ImageUpload
 const handleTextExtracted = (text) => {
@@ -54,16 +121,34 @@ const handleBackToImageUpload = () => {
 const handleBackToDashboard = () => {
   setCurrentView('dashboard');
 };
+
   useEffect(() => {
     if (currentView === 'practice') {
       initializeSpeechRecognition();
     }
+    // Cleanup correction handler on unmount
+    return () => {
+      correctionHandler.cleanup();
+    };
   }, [currentView]);
+
+  // Modified function to start correction flow
+  const startCorrectionFlow = (wrongWords) => {
+    if (wrongWords && wrongWords.length > 0) {
+      // NEW: Save wrong words to cookies before starting correction
+      saveWrongWordsToCookies(wrongWords, 'practice');
+      
+      correctionHandler.startCorrection(wrongWords, () => {
+        // Callback after correction is complete
+        console.log('Correction flow completed');
+        // You can add any additional logic here after correction
+      });
+    }
+  };
 
   const initializeSpeechRecognition = () => {
     const sentences = [
       "children play cricket in an empty ground after finishing homework",
-      ,
     ];
 
     const levels = {
@@ -78,7 +163,7 @@ const handleBackToDashboard = () => {
     let wordTimeout = null;
     const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
-   const initWords = () => {
+  const initWords = () => {
   const words = sentences[speechState.sentenceIndex].split(" ");
   const results = Array(words.length).fill(null);
   let currentWordIndex = 0;
@@ -103,7 +188,6 @@ const handleBackToDashboard = () => {
     currentWordIndex
   }));
 };
-
 
 const setupSpeechRecognition = () => {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -208,7 +292,7 @@ const setupSpeechRecognition = () => {
   };
 };
 
- // Fixed validateWord function with proper Expert mode validation
+ // Modified validateWord function with enhanced wrong word storage
 const validateWord = (spoken) => {
   // Clear any existing timeout
   if (wordTimeout) {
@@ -264,6 +348,11 @@ const validateWord = (spoken) => {
       const matched = spokenLower.includes(expected) || expected.includes(spokenLower);
       newResults[currentWordIndex] = matched ? "correct" : "wrong";
       
+      // NEW: If word is wrong, immediately save it to cookies
+      if (!matched) {
+        saveWrongWordsToCookies([words[currentWordIndex]], 'practice');
+      }
+      
       // ALWAYS move to next word regardless of correct/wrong
       let nextIndex = currentWordIndex + 1;
       while (nextIndex < words.length && words[nextIndex].length <= 2) {
@@ -284,16 +373,27 @@ const validateWord = (spoken) => {
       startWordTimeout(newWordIndex);
     }
     
-    // Check if all words are completed
+    // Check if all words are completed - ENHANCED SECTION
     if (newWordIndex >= words.length) {
       setTimeout(() => {
         recognition?.stop();
         const score = newResults.filter(r => r === "correct").length;
+        const wrongWords = words.filter((word, index) => newResults[index] === "wrong");
+        
         setSpeechState(prev => ({
           ...prev,
           recognizing: false,
           score: `🎉 Final Score: ${score}/${words.length}`
         }));
+        
+        // NEW: Save all wrong words from this session
+        if (wrongWords.length > 0) {
+          saveWrongWordsToCookies(wrongWords, 'practice');
+          
+          setTimeout(() => {
+            startCorrectionFlow(wrongWords);
+          }, 2000);
+        }
       }, 1000);
     }
     
@@ -318,6 +418,9 @@ const startWordTimeout = (wordIndex) => {
       const newResults = [...results];
       newResults[wordIndex] = "wrong"; // Mark as wrong due to timeout
       
+      // NEW: Save timeout words to cookies as well
+      saveWrongWordsToCookies([words[wordIndex]], 'timeout');
+      
       // Move to next word
       let nextIndex = wordIndex + 1;
       while (nextIndex < words.length && words[nextIndex].length <= 2) {
@@ -330,16 +433,27 @@ const startWordTimeout = (wordIndex) => {
         startWordTimeout(nextIndex);
       }
       
-      // Check if all words are completed
+      // Check if all words are completed - ENHANCED SECTION
       if (nextIndex >= words.length) {
         setTimeout(() => {
           recognition?.stop();
           const score = newResults.filter(r => r === "correct").length;
+          const wrongWords = words.filter((word, index) => newResults[index] === "wrong");
+          
           setSpeechState(prev => ({
             ...prev,
             recognizing: false,
             score: `🎉 Final Score: ${score}/${words.length}`
           }));
+          
+          // NEW: Save all wrong words from this session
+          if (wrongWords.length > 0) {
+            saveWrongWordsToCookies(wrongWords, 'timeout');
+            
+            setTimeout(() => {
+              startCorrectionFlow(wrongWords);
+            }, 2000);
+          }
         }, 1000);
       }
       
@@ -352,7 +466,6 @@ const startWordTimeout = (wordIndex) => {
     });
   }, 5000); // 5 second timeout
 };
-
 
    window.toggleRecognition = () => {
   if (speechState.recognizing) {
@@ -371,7 +484,16 @@ const startWordTimeout = (wordIndex) => {
     initWords();
   };
 
-  const DashboardView = () => (
+  // NEW: Function to get wrong words count for dashboard display
+  const getWrongWordsCount = () => {
+    return getWrongWordsFromCookies().length;
+  };
+
+  // Rest of your component code remains the same...
+  const DashboardView = () => {
+    const wrongWordsCount = getWrongWordsCount();
+    
+    return (
     <div className="dashboard">
       {/* Header */}
       <div className="header">
@@ -405,13 +527,18 @@ const startWordTimeout = (wordIndex) => {
             <p>Reading Level</p>
           </div>
         </div>
-        <div className="stat-card streak-card">
-          <Calendar className="card-icon" />
-          <div className="stat-content">
-            <h3>{userStats.currentStreak} days</h3>
-            <p>Current Streak</p>
-          </div>
-        </div>
+       <div className="activity-card warmup-practice" onClick={() => setCurrentView('warmup')}>
+  <div className="activity-header">
+    <Zap className="activity-icon warmup-icon" />
+    <h3>Warmup Practice</h3>
+    {wrongWordsCount > 0 && <span className="word-count-badge">{wrongWordsCount}</span>}
+  </div>
+  <p>Practice words you found difficult in previous sessions.</p>
+  <div className="activity-meta">
+    <span>Quick Review</span>
+    <span>{wrongWordsCount > 0 ? `${wrongWordsCount} words to practice` : 'Build Confidence'}</span>
+  </div>
+</div>
         <div className="stat-card stars-card">
           <Star className="card-icon" />
           <div className="stat-content">
@@ -495,7 +622,7 @@ const startWordTimeout = (wordIndex) => {
         </div>
       </div>
     </div>
-  );
+  )};
 
   const PracticeView = () => (
     <div className="practice-view">
@@ -564,6 +691,7 @@ const startWordTimeout = (wordIndex) => {
       </div>
     </div>
   );
+
 const ImageUploadView = () => (
   <ImageUpload 
     onTextExtracted={handleTextExtracted}
@@ -575,9 +703,20 @@ const ReadBookView = () => (
   <ReadMyBook 
     bookText={bookText}
     onBack={handleBackToImageUpload}
+    // NEW: Pass wrong word saving function to ReadMyBook
+    onWrongWords={(wrongWords) => saveWrongWordsToCookies(wrongWords, 'book')}
   />
 );
 
+const WarmupView = () => (
+  <Warmup 
+    onBack={handleBackToDashboard}
+    // NEW: Pass cookie functions to Warmup component
+    getWrongWords={getWrongWordsFromCookies}
+    removeWord={removeWordFromCookies}
+    saveWrongWords={(words) => saveWrongWordsToCookies(words, 'warmup')}
+  />
+);
 
   return (
     <div className="app">
@@ -586,8 +725,11 @@ const ReadBookView = () => (
   {currentView === 'dashboard' && <DashboardView />}
   {currentView === 'practice' && <PracticeView />}
   {currentView === 'readbook' && <ReadBookView />}
+  {currentView === 'warmup' && <WarmupView />}
+
 </div>     
-    </div>
+
+</div>
   );
 }
 
