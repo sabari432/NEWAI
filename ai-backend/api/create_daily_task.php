@@ -1,4 +1,6 @@
 <?php
+session_start();
+
 // CORS headers
 header("Access-Control-Allow-Origin: http://localhost:3000");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
@@ -9,6 +11,24 @@ header("Content-Type: application/json");
 // Handle preflight request (CORS OPTIONS)
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     http_response_code(200);
+    exit;
+}
+
+// Check if user is logged in
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['user_type'])) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Not logged in'
+    ]);
+    exit;
+}
+
+// Only teachers can create daily tasks
+if ($_SESSION['user_type'] !== 'teacher') {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Only teachers can create daily tasks'
+    ]);
     exit;
 }
 
@@ -51,12 +71,29 @@ foreach ($required_fields as $field) {
     }
 }
 
+// Get teacher ID from session
+$teacher_id = $_SESSION['user_id'];
+
+// Validate that assigned classes belong to the teacher
+if (!empty($input['assigned_classes'])) {
+    $class_ids = implode(',', array_map('intval', $input['assigned_classes']));
+    $class_check = $pdo->prepare("SELECT COUNT(*) FROM classes WHERE id IN ($class_ids) AND teacher_id = ?");
+    $class_check->execute([$teacher_id]);
+    $valid_classes = $class_check->fetchColumn();
+    
+    if ($valid_classes != count($input['assigned_classes'])) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Some assigned classes do not belong to you']);
+        exit;
+    }
+}
+
 try {
     $pdo->beginTransaction();
 
-    // Insert daily task
-    $sql = "INSERT INTO daily_tasks (title, description, level, target_accuracy, time_limit, stars_reward, due_date, created_at) 
-            VALUES (:title, :description, :level, :target_accuracy, :time_limit, :stars_reward, :due_date, NOW())";
+    // Insert daily task with teacher_id
+    $sql = "INSERT INTO daily_tasks (title, description, level, target_accuracy, time_limit, stars_reward, due_date, teacher_id, created_at) 
+            VALUES (:title, :description, :level, :target_accuracy, :time_limit, :stars_reward, :due_date, :teacher_id, NOW())";
 
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
@@ -66,7 +103,8 @@ try {
         ':target_accuracy' => $input['target_accuracy'],
         ':time_limit' => $input['time_limit'],
         ':stars_reward' => $input['stars_reward'],
-        ':due_date' => $input['due_date']
+        ':due_date' => $input['due_date'],
+        ':teacher_id' => $teacher_id
     ]);
 
     $task_id = $pdo->lastInsertId();

@@ -397,18 +397,25 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
   }
 
   // Menu View
-  if (challengeState === 'menu') {
+    if (challengeState === 'menu') {
     const today = getTodayDateString();
-    console.log('Menu view - Today:', today); // Debug log
-    console.log('Menu view - Available tasks:', availableTasks); // Debug log
+    console.log('Menu view - Today:', today);
+    console.log('Menu view - Available tasks:', availableTasks);
     
+    // Show tasks for today AND future tasks (so students can see what's coming)
     const todayTasks = availableTasks.filter(task => {
       const taskDate = normalizeDateString(task.due_date);
-      console.log('Menu filter - Task date:', taskDate, 'Today:', today); // Debug log
+      console.log('Menu filter - Task date:', taskDate, 'Today:', today);
       return taskDate === today;
     });
     
-    console.log('Today tasks:', todayTasks); // Debug log
+    const futureTasks = availableTasks.filter(task => {
+      const taskDate = normalizeDateString(task.due_date);
+      return taskDate > today;
+    });
+    
+    console.log('Today tasks:', todayTasks);
+    console.log('Future tasks:', futureTasks);
 
     return (
       <div className="daily-challenge-container">
@@ -425,11 +432,13 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
             <span>Today's Challenges - {new Date().toLocaleDateString()}</span>
           </div>
           {/* Debug info - remove in production */}
-          
+          <div style={{ fontSize: '12px', color: '#666', marginTop: '10px' }}>
+            Debug: Total tasks: {availableTasks.length}, Today: {todayTasks.length}, Future: {futureTasks.length}
+          </div>
         </div>
 
         <div className="challenges-section">
-          <h3>Available Challenges:</h3>
+          <h3>Today's Challenges:</h3>
           
           {todayTasks.length > 0 ? (
             <div className="challenges-grid">
@@ -483,6 +492,11 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
                       <div className="challenge-sentences">
                         <span>{task.sentences?.length || 0} sentences to read</span>
                       </div>
+                      {task.teacher_name && (
+                        <div className="challenge-teacher">
+                          <span>By: {task.teacher_name}</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="challenge-actions">
@@ -509,8 +523,79 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
             </div>
           ) : (
             <div className="no-challenges">
-              <p>No challenges available for today. Check back later or contact your teacher!</p>
+              <p>No challenges available for today.</p>
             </div>
+          )}
+
+          {futureTasks.length > 0 && (
+            <>
+              <h3 style={{ marginTop: '30px' }}>Upcoming Challenges:</h3>
+              <div className="challenges-grid">
+                {futureTasks.map(task => (
+                  <div key={task.id} className="challenge-card upcoming">
+                    <div className="challenge-header">
+                      <div className="challenge-title">
+                        <h4>{getLevelIcon(task.level)} {task.title}</h4>
+                        <span 
+                          className="challenge-level"
+                          style={{ 
+                            backgroundColor: getLevelColor(task.level),
+                            color: 'white',
+                            padding: '4px 8px',
+                            borderRadius: '12px',
+                            fontSize: '12px'
+                          }}
+                        >
+                          {task.level}
+                        </span>
+                      </div>
+                      <div className="upcoming-badge">
+                        <Calendar className="calendar-icon" />
+                        <span>Due: {new Date(task.due_date).toLocaleDateString()}</span>
+                      </div>
+                    </div>
+                    
+                    <p className="challenge-description">{task.description}</p>
+                    
+                    <div className="challenge-stats">
+                      <div className="challenge-stat">
+                        <Target className="stat-icon" />
+                        <span>{task.target_accuracy}% accuracy</span>
+                      </div>
+                      <div className="challenge-stat">
+                        <Clock className="stat-icon" />
+                        <span>{formatTime(task.time_limit)}</span>
+                      </div>
+                      <div className="challenge-stat">
+                        <Star className="stat-icon" />
+                        <span>{task.stars_reward} stars</span>
+                      </div>
+                    </div>
+
+                    <div className="challenge-meta">
+                      <div className="challenge-sentences">
+                        <span>{task.sentences?.length || 0} sentences to read</span>
+                      </div>
+                      {task.teacher_name && (
+                        <div className="challenge-teacher">
+                          <span>By: {task.teacher_name}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="challenge-actions">
+                      <button 
+                        className="start-challenge-btn"
+                        disabled={true}
+                        style={{ opacity: 0.6 }}
+                      >
+                        🗓️ Available on {new Date(task.due_date).toLocaleDateString()}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </div>
       </div>

@@ -1,8 +1,29 @@
 <?php
+session_start();
+
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Origin: http://localhost:3000');
 header('Access-Control-Allow-Methods: POST');
 header('Access-Control-Allow-Headers: Content-Type');
+header('Access-Control-Allow-Credentials: true');
+
+// Check if user is logged in
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['user_type'])) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Not logged in'
+    ]);
+    exit;
+}
+
+// Only teachers can update daily tasks
+if ($_SESSION['user_type'] !== 'teacher') {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Only teachers can update daily tasks'
+    ]);
+    exit;
+}
 
 // Database connection
 $host = 'speakread.ctea6e8ei0ff.ap-south-1.rds.amazonaws.com';
@@ -40,33 +61,61 @@ if (!isset($input['id']) || empty($input['id'])) {
     exit;
 }
 
+$teacher_id = $_SESSION['user_id'];
+$task_id = $input['id'];
+
+// Check if the task belongs to the logged-in teacher
+$ownershipCheck = $pdo->prepare("SELECT id FROM daily_tasks WHERE id = ? AND teacher_id = ?");
+$ownershipCheck->execute([$task_id, $teacher_id]);
+
+if ($ownershipCheck->rowCount() === 0) {
+    http_response_code(403);
+    echo json_encode(['error' => 'You can only update your own tasks']);
+    exit;
+}
+
+// Validate that assigned classes belong to the teacher
+if (!empty($input['assigned_classes'])) {
+    $class_ids = implode(',', array_map('intval', $input['assigned_classes']));
+    $class_check = $pdo->prepare("SELECT COUNT(*) FROM classes WHERE id IN ($class_ids) AND teacher_id = ?");
+    $class_check->execute([$teacher_id]);
+    $valid_classes = $class_check->fetchColumn();
+    
+    if ($valid_classes != count($input['assigned_classes'])) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Some assigned classes do not belong to you']);
+        exit;
+    }
+}
+
 try {
     // Start transaction
     $pdo->beginTransaction();
     
-    // Update daily task
+    // Update daily task (teacher_id remains the same)
     $sql = "UPDATE daily_tasks 
             SET title = :title, description = :description, level = :level, 
                 target_accuracy = :target_accuracy, time_limit = :time_limit, 
                 stars_reward = :stars_reward, due_date = :due_date, updated_at = NOW()
-            WHERE id = :id";
+            WHERE id = :id AND teacher_id = :teacher_id";
     
     $stmt = $pdo->prepare($sql);
     $stmt->execute([
-        ':id' => $input['id'],
+        ':id' => $task_id,
         ':title' => $input['title'],
         ':description' => $input['description'] ?? '',
         ':level' => $input['level'],
         ':target_accuracy' => $input['target_accuracy'],
         ':time_limit' => $input['time_limit'],
         ':stars_reward' => $input['stars_reward'],
-        ':due_date' => $input['due_date']
+        ':due_date' => $input['due_date'],
+        ':teacher_id' => $teacher_id
     ]);
     
     // Delete existing sentences
     $delete_sentences_sql = "DELETE FROM daily_task_sentences WHERE task_id = :task_id";
     $delete_sentences_stmt = $pdo->prepare($delete_sentences_sql);
-    $delete_sentences_stmt->execute([':task_id' => $input['id']]);
+    $delete_sentences_stmt->execute([':task_id' => $task_id]);
     
     // Insert new sentences
     if (!empty($input['sentences'])) {
@@ -76,7 +125,7 @@ try {
         foreach ($input['sentences'] as $sentence) {
             if (trim($sentence) !== '') {
                 $sentence_stmt->execute([
-                    ':task_id' => $input['id'],
+                    ':task_id' => $task_id,
                     ':sentence' => trim($sentence)
                 ]);
             }
@@ -86,7 +135,7 @@ try {
     // Delete existing class assignments
     $delete_classes_sql = "DELETE FROM daily_task_classes WHERE task_id = :task_id";
     $delete_classes_stmt = $pdo->prepare($delete_classes_sql);
-    $delete_classes_stmt->execute([':task_id' => $input['id']]);
+    $delete_classes_stmt->execute([':task_id' => $task_id]);
     
     // Insert new class assignments
     if (!empty($input['assigned_classes'])) {
@@ -95,7 +144,7 @@ try {
         
         foreach ($input['assigned_classes'] as $class_id) {
             $class_stmt->execute([
-                ':task_id' => $input['id'],
+                ':task_id' => $task_id,
                 ':class_id' => $class_id
             ]);
         }

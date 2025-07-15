@@ -1,4 +1,6 @@
 <?php
+session_start();
+
 // Add error reporting for debugging
 error_reporting(E_ALL);
 ini_set('display_errors', 1);
@@ -20,10 +22,17 @@ header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-W
 header("Access-Control-Allow-Credentials: true");
 header("Content-Type: application/json");
 
-// Skip OPTIONS method
-if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
-    exit(0);
+// Check if user is logged in
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['user_type'])) {
+    echo json_encode([
+        'success' => false,
+        'message' => 'Not logged in'
+    ]);
+    exit;
 }
+
+$user_id = $_SESSION['user_id'];
+$user_type = $_SESSION['user_type'];
 
 try {
     // Database connection
@@ -49,57 +58,161 @@ try {
         throw new Exception("Table 'daily_tasks' does not exist");
     }
 
-    // Fetch all daily tasks
-    $query = "
-        SELECT 
-            dt.id,
-            dt.title,
-            dt.description,
-            dt.level,
-            dt.target_accuracy,
-            dt.time_limit,
-            dt.stars_reward,
-            dt.due_date,
-            dt.created_at,
-            dt.updated_at
-        FROM daily_tasks dt
-        ORDER BY dt.created_at DESC
-    ";
+    $tasks = [];
 
-    $stmt = $pdo->prepare($query);
-    $stmt->execute();
-    $tasks = $stmt->fetchAll();
-
-    // Fetch sentences and class assignments for each task
-    foreach ($tasks as &$task) {
-        // Sentences
-        $sentencesStmt = $pdo->prepare("SELECT sentence FROM daily_task_sentences WHERE task_id = ? ORDER BY id");
-        $sentencesStmt->execute([$task['id']]);
-        $task['sentences'] = $sentencesStmt->fetchAll(PDO::FETCH_COLUMN);
-
-        // Assigned classes
-        $classesStmt = $pdo->prepare("
+    if ($user_type === 'teacher') {
+        // Teachers can see only their own tasks
+        $query = "
             SELECT 
-                dtc.class_id,
-                b.name as batch_name,
-                b.section
-            FROM daily_task_classes dtc
-            JOIN batches b ON dtc.class_id = b.id
-            WHERE dtc.task_id = ?
-        ");
-        $classesStmt->execute([$task['id']]);
-        $assignedClasses = $classesStmt->fetchAll();
+                dt.id,
+                dt.title,
+                dt.description,
+                dt.level,
+                dt.target_accuracy,
+                dt.time_limit,
+                dt.stars_reward,
+                dt.due_date,
+                dt.created_at,
+                dt.updated_at,
+                dt.teacher_id
+            FROM daily_tasks dt
+            WHERE dt.teacher_id = ?
+            ORDER BY dt.created_at DESC
+        ";
 
-        $task['assigned_classes'] = array_column($assignedClasses, 'class_id');
-        $task['assigned_classes_details'] = $assignedClasses;
+        $stmt = $pdo->prepare($query);
+        $stmt->execute([$user_id]);
+        $tasks = $stmt->fetchAll();
+
+        // Fetch sentences and class assignments for each task
+        foreach ($tasks as &$task) {
+            // Sentences
+            $sentencesStmt = $pdo->prepare("SELECT sentence FROM daily_task_sentences WHERE task_id = ? ORDER BY id");
+            $sentencesStmt->execute([$task['id']]);
+            $task['sentences'] = $sentencesStmt->fetchAll(PDO::FETCH_COLUMN);
+
+            // Assigned classes (only teacher's classes)
+            $classesStmt = $pdo->prepare("
+                SELECT 
+                    dtc.class_id,
+                    c.name as class_name,
+                    c.section
+                FROM daily_task_classes dtc
+                JOIN classes c ON dtc.class_id = c.id
+                WHERE dtc.task_id = ? AND c.teacher_id = ?
+            ");
+            $classesStmt->execute([$task['id'], $user_id]);
+            $assignedClasses = $classesStmt->fetchAll();
+
+            $task['assigned_classes'] = array_column($assignedClasses, 'class_id');
+            $task['assigned_classes_details'] = $assignedClasses;
+        }
+
+    } else if ($user_type === 'student') {
+        // Students can see only tasks assigned to their classes
+        // First, get the student's classes
+        $studentClassesStmt = $pdo->prepare("
+            SELECT class_id 
+            FROM student_classes 
+            WHERE student_id = ?
+        ");
+        $studentClassesStmt->execute([$user_id]);
+        $studentClasses = $studentClassesStmt->fetchAll(PDO::FETCH_COLUMN);
+
+        if (!empty($studentClasses)) {
+            $classIds = implode(',', array_map('intval', $studentClasses));
+            
+            $query = "
+                SELECT DISTINCT
+                    dt.id,
+                    dt.title,
+                    dt.description,
+                    dt.level,
+                    dt.target_accuracy,
+                    dt.time_limit,
+                    dt.stars_reward,
+                    dt.due_date,
+                    dt.created_at,
+                    dt.updated_at,
+                    dt.teacher_id,
+                    t.teacher_name
+                FROM daily_tasks dt
+                JOIN daily_task_classes dtc ON dt.id = dtc.task_id
+                JOIN teachers t ON dt.teacher_id = t.id
+                WHERE dtc.class_id IN ($classIds) AND dt.due_date >= CURDATE()
+                ORDER BY dt.due_date ASC, dt.created_at DESC
+            ";
+
+            $stmt = $pdo->prepare($query);
+            $stmt->execute();
+            $tasks = $stmt->fetchAll();
+
+            // Fetch sentences for each task (students don't need class assignment details)
+            foreach ($tasks as &$task) {
+                $sentencesStmt = $pdo->prepare("SELECT sentence FROM daily_task_sentences WHERE task_id = ? ORDER BY id");
+                $sentencesStmt->execute([$task['id']]);
+                $task['sentences'] = $sentencesStmt->fetchAll(PDO::FETCH_COLUMN);
+            }
+        }
+
+    } else {
+        // Admin can see all tasks
+        $query = "
+            SELECT 
+                dt.id,
+                dt.title,
+                dt.description,
+                dt.level,
+                dt.target_accuracy,
+                dt.time_limit,
+                dt.stars_reward,
+                dt.due_date,
+                dt.created_at,
+                dt.updated_at,
+                dt.teacher_id,
+                t.teacher_name
+            FROM daily_tasks dt
+            LEFT JOIN teachers t ON dt.teacher_id = t.id
+            ORDER BY dt.created_at DESC
+        ";
+
+        $stmt = $pdo->prepare($query);
+        $stmt->execute();
+        $tasks = $stmt->fetchAll();
+
+        // Fetch sentences and class assignments for each task
+        foreach ($tasks as &$task) {
+            // Sentences
+            $sentencesStmt = $pdo->prepare("SELECT sentence FROM daily_task_sentences WHERE task_id = ? ORDER BY id");
+            $sentencesStmt->execute([$task['id']]);
+            $task['sentences'] = $sentencesStmt->fetchAll(PDO::FETCH_COLUMN);
+
+            // Assigned classes
+            $classesStmt = $pdo->prepare("
+                SELECT 
+                    dtc.class_id,
+                    c.name as class_name,
+                    c.section
+                FROM daily_task_classes dtc
+                JOIN classes c ON dtc.class_id = c.id
+                WHERE dtc.task_id = ?
+            ");
+            $classesStmt->execute([$task['id']]);
+            $assignedClasses = $classesStmt->fetchAll();
+
+            $task['assigned_classes'] = array_column($assignedClasses, 'class_id');
+            $task['assigned_classes_details'] = $assignedClasses;
+        }
     }
 
     // Return success response
     echo json_encode([
         'success' => true,
         'tasks' => $tasks,
+        'user_type' => $user_type,
         'debug' => [
             'task_count' => count($tasks),
+            'user_id' => $user_id,
             'timestamp' => date('Y-m-d H:i:s')
         ]
     ]);
