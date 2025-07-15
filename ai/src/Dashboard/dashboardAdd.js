@@ -48,19 +48,11 @@ const ReadingPalApp = () => {
     window.location.href = "/login";
   };
 
-  // Restore state from cookies on component mount
+  // Get current user info on component mount
   useEffect(() => {
-    const savedSelectedClass = getCookie('selectedClass');
-    if (savedSelectedClass && savedSelectedClass !== '') {
-      try {
-        const parsedClass = JSON.parse(savedSelectedClass);
-        setSelectedClass(parsedClass);
-      } catch (error) {
-        console.error('Error parsing saved class:', error);
-      }
-    }
-
-    // Get current user info
+    // Clear any previously selected class to always start fresh
+    setCookie('selectedClass', '', -1);
+    
     const fetchCurrentUser = async () => {
       try {
         const res = await fetch(`${API_BASE_URL}/get_current_user.php`, {
@@ -99,22 +91,7 @@ const ReadingPalApp = () => {
         
         if (result.success && Array.isArray(result.classes)) {
           setClasses(result.classes);
-          
-          // If we have a saved selected class, fetch its students
-          const savedSelectedClass = getCookie('selectedClass');
-          if (savedSelectedClass && savedSelectedClass !== '') {
-            try {
-              const parsedClass = JSON.parse(savedSelectedClass);
-              // Find the class in the fetched classes to get updated info
-              const foundClass = result.classes.find(c => c.id === parsedClass.id);
-              if (foundClass) {
-                setSelectedClass(foundClass);
-                fetchStudents(foundClass.id);
-              }
-            } catch (error) {
-              console.error('Error parsing saved class:', error);
-            }
-          }
+          // Always start with no class selected - removed the auto-restore logic
         } else {
           console.error("Invalid response structure:", result);
           setClasses([]);

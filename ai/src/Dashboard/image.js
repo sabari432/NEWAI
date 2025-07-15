@@ -15,7 +15,7 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
 
-  // Speech recognition state (same as app.js)
+  // Speech recognition state
   const [speechState, setSpeechState] = useState({
     currentLevel: 'L1',
     words: [],
@@ -27,6 +27,9 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
     errorMessage: ''
   });
 
+  // Add incorrect words handler ref
+  const incorrectWordsHandlerRef = useRef(null);
+
   // Initialize speech recognition when practice starts
   useEffect(() => {
     if (showPractice && extractedText) {
@@ -34,11 +37,22 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
     }
   }, [showPractice, extractedText]);
 
+  // Initialize incorrect words handler
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.IncorrectWordsHandler) {
+      incorrectWordsHandlerRef.current = new window.IncorrectWordsHandler();
+    }
+  }, []);
+
   // Cleanup camera stream when component unmounts or camera closes
   useEffect(() => {
     return () => {
       if (stream) {
         stream.getTracks().forEach(track => track.stop());
+      }
+      // Cleanup incorrect words handler
+      if (incorrectWordsHandlerRef.current) {
+        incorrectWordsHandlerRef.current.cleanup();
       }
     };
   }, [stream]);
@@ -56,14 +70,13 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
     try {
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
         video: { 
-          facingMode: 'environment' // Use back camera on mobile if available
+          facingMode: 'environment'
         } 
       });
       setStream(mediaStream);
       setShowCamera(true);
       setError('');
       
-      // Set video stream when camera opens
       setTimeout(() => {
         if (videoRef.current) {
           videoRef.current.srcObject = mediaStream;
@@ -89,22 +102,17 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
     const canvas = canvasRef.current;
     const context = canvas.getContext('2d');
 
-    // Set canvas dimensions to match video
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
-    // Draw video frame to canvas
     context.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-    // Convert canvas to blob
     canvas.toBlob((blob) => {
       if (blob) {
-        // Create a File object from the blob
         const file = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
         setSelectedImage(file);
         closeCamera();
         
-        // Automatically process the captured image
         setTimeout(() => {
           handleImageUpload(file);
         }, 500);
@@ -112,48 +120,61 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
     }, 'image/jpeg', 0.8);
   };
 
- const handleImageUpload = async (imageFile = null) => {
-  const fileToUpload = imageFile || selectedImage;
+  const handleImageUpload = async (imageFile = null) => {
+    const fileToUpload = imageFile || selectedImage;
 
-  if (!fileToUpload) {
-    setError('Please select an image first');
-    return;
-  }
+    if (!fileToUpload) {
+      setError('Please select an image first');
+      return;
+    }
 
-  setIsLoading(true);
-  setError('');
+    setIsLoading(true);
+    setError('');
 
-  try {
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const imageData = reader.result;
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const imageData = reader.result;
 
-      const { data: { text } } = await Tesseract.recognize(
-        imageData,
-        'eng',
-        {
-          logger: m => console.log(m), // Logs progress
+        const { data: { text } } = await Tesseract.recognize(
+          imageData,
+          'eng',
+          {
+            logger: m => console.log(m),
+          }
+        );
+
+        if (text.trim()) {
+          const filteredText = text
+            .replace(/[^a-zA-Z\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          
+          if (filteredText) {
+            setExtractedText(filteredText);
+            setError('');
+          } else {
+            setError('No valid text found in the image. Try a clearer image with text.');
+          }
+        } else {
+          setError('No text found in the image. Try a clearer image.');
         }
-      );
 
-      if (text.trim()) {
-        setExtractedText(text.trim());
-        setError('');
-      } else {
-        setError('No text found in the image. Try a clearer image.');
-      }
+        setIsLoading(false);
+      };
 
+      reader.readAsDataURL(fileToUpload);
+
+    } catch (err) {
+      setError('Error processing image: ' + err.message);
       setIsLoading(false);
-    };
+    }
+  };
 
-    reader.readAsDataURL(fileToUpload);
+  // Function to collect wrong words and send to incorrect words handler
+  
 
-  } catch (err) {
-    setError('Error processing image: ' + err.message);
-    setIsLoading(false);
-  }
-};
-  // Speech recognition functions (same as app.js)
+  // Speech recognition functions
   const initializeSpeechRecognition = () => {
     const levels = {
       L1: { name: "Beginner", delay: 500, nextWordDelay: 80 },
@@ -165,27 +186,12 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
     let autoRestartEnabled = false;
     let canValidate = false;
     let wordTimeout = null;
-    const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
     const initWords = () => {
-      // USE FULL TEXT instead of just first sentence
-      const cleanText = extractedText.trim().replace(/\s+/g, ' '); // Clean up extra spaces
-      const words = cleanText.split(/\s+/); // Split all text into words
+      const cleanText = extractedText.trim().replace(/\s+/g, ' ');
+      const words = cleanText.split(/\s+/);
       const results = Array(words.length).fill(null);
       let currentWordIndex = 0;
-      
-      // Mark words with 2 or fewer letters as correct and find first word > 2 letters
-      words.forEach((word, index) => {
-        if (word.length <= 2) {
-          results[index] = "correct";
-        }
-      });
-      
-      // Find first word that needs to be spoken (length > 2 and not marked correct)
-      currentWordIndex = words.findIndex((word, index) => word.length > 2 && results[index] === null);
-      if (currentWordIndex === -1) {
-        currentWordIndex = words.length; // All words are short, set to end
-      }
       
       setSpeechState(prev => ({
         ...prev,
@@ -218,7 +224,6 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
         }));
         setTimeout(() => {
           canValidate = true;
-          // Start timeout for first word (only for non-expert modes)
           setSpeechState(prevState => {
             if (prevState.currentLevel !== 'L3' && prevState.currentWordIndex < prevState.words.length) {
               startWordTimeout(prevState.currentWordIndex);
@@ -241,7 +246,6 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
           wordTimeout = null;
         }
         
-        // Auto-restart recognition if we're still in the middle of the exercise
         setSpeechState(prevState => {
           if (autoRestartEnabled && prevState.currentWordIndex < prevState.words.length && prevState.currentLevel !== 'L3') {
             setTimeout(() => {
@@ -266,7 +270,6 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
           errorMessage: `Error: ${e.error}. Please try again.`
         }));
         
-        // Try to restart on certain errors
         if (autoRestartEnabled && !['no-speech', 'aborted'].includes(e.error)) {
           setTimeout(() => {
             if (recognition && autoRestartEnabled) {
@@ -296,161 +299,185 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
       };
     };
 
-    const validateWord = (spoken) => {
-      // Clear any existing timeout
-      if (wordTimeout) {
-        clearTimeout(wordTimeout);
-        wordTimeout = null;
+  const validateWord = (spoken) => {
+  if (wordTimeout) {
+    clearTimeout(wordTimeout);
+    wordTimeout = null;
+  }
+  
+  setSpeechState(prevState => {
+    const { words, currentWordIndex, results, currentLevel } = prevState;
+    
+    if (currentWordIndex >= words.length) return prevState;
+    
+    const newResults = [...results];
+    let newWordIndex = currentWordIndex;
+    let scoreMessage = "";
+    
+    if (currentLevel === 'L3') {
+      const spokenWords = spoken.toLowerCase().trim().split(/\s+/);
+      
+      words.forEach((word, index) => {
+        if (word.length <= 2) {
+          newResults[index] = "correct";
+        } else {
+          const wordLower = word.toLowerCase();
+          const foundInSpoken = spokenWords.some(spokenWord => 
+            spokenWord.includes(wordLower) || wordLower.includes(spokenWord)
+          );
+          newResults[index] = foundInSpoken ? "correct" : "wrong";
+        }
+      });
+      
+      newWordIndex = words.length;
+      
+      const correctCount = newResults.filter(r => r === "correct").length;
+      const totalWords = words.length;
+      const accuracy = Math.round((correctCount / totalWords) * 100);
+      
+      if (accuracy >= 70) {
+        scoreMessage = `🎉 Great! ${correctCount}/${totalWords} words correct (${accuracy}%)`;
+      } else {
+        scoreMessage = `❌ ${correctCount}/${totalWords} words correct (${accuracy}%). Try again!`;
       }
       
-      setSpeechState(prevState => {
-        const { words, currentWordIndex, results, currentLevel } = prevState;
+    } else {
+      const currentWord = words[currentWordIndex];
+      const expected = currentWord.toLowerCase().replace(/[^\w\s]/g, '');
+      const spokenLower = spoken.toLowerCase().trim().replace(/[^\w\s]/g, '');
+      
+      const matched = spokenLower.includes(expected) || expected.includes(spokenLower);
+      newResults[currentWordIndex] = matched ? "correct" : "wrong";
+      
+      if (matched) {
+        scoreMessage = `✅ Correct! "${expected}"`;
+      } else {
+        scoreMessage = `❌ Said "${spokenLower}", expected "${expected}"`;
+      }
+      
+      newWordIndex = currentWordIndex + 1;
+      while (newWordIndex < words.length && words[newWordIndex].length <= 2) {
+        newResults[newWordIndex] = "correct";
+        newWordIndex++;
+      }
+      
+      if (newWordIndex < words.length) {
+        startWordTimeout(newWordIndex);
+      }
+    }
+    
+    // Check if all words are completed
+    if (newWordIndex >= words.length) {
+      setTimeout(() => {
+        recognition?.stop();
+        const score = newResults.filter(r => r === "correct").length;
+        setSpeechState(prev => ({
+          ...prev,
+          recognizing: false,
+          score: `🎉 Final Score: ${score}/${words.length}`
+        }));
         
-        if (currentWordIndex >= words.length) return prevState;
-        
-        const newResults = [...results];
-        let newWordIndex = currentWordIndex;
-        let scoreMessage = "";
-        
-        if (currentLevel === 'L3') {
-          // Expert mode - validate each word individually in the spoken sentence
-          const spokenWords = spoken.toLowerCase().trim().split(/\s+/);
-          const targetWords = words.map(w => w.toLowerCase());
-          
-          // Mark each word as correct or wrong based on individual word matching
-          words.forEach((word, index) => {
-            if (word.length <= 2) {
-              newResults[index] = "correct"; // Auto-correct short words
-            } else {
-              const wordLower = word.toLowerCase();
-              // Check if this word appears in the spoken sentence
-              const foundInSpoken = spokenWords.some(spokenWord => 
-                spokenWord.includes(wordLower) || wordLower.includes(spokenWord)
-              );
-              newResults[index] = foundInSpoken ? "correct" : "wrong";
+        // AUTO-CALL: Automatically call incorrect words handler after completion
+        setTimeout(() => {
+          const wrongWords = [];
+          newResults.forEach((result, index) => {
+            if (result === 'wrong') {
+              wrongWords.push(words[index]);
             }
           });
           
-          newWordIndex = words.length;
-          
-          const correctCount = newResults.filter(r => r === "correct").length;
-          const totalWords = words.length;
-          const accuracy = Math.round((correctCount / totalWords) * 100);
-          
-          if (accuracy >= 70) {
-            scoreMessage = `🎉 Great! ${correctCount}/${totalWords} words correct (${accuracy}%)`;
-          } else {
-            scoreMessage = `❌ ${correctCount}/${totalWords} words correct (${accuracy}%). Try again!`;
+          if (wrongWords.length > 0 && incorrectWordsHandlerRef.current) {
+            incorrectWordsHandlerRef.current.startCorrection(wrongWords, () => {
+              console.log('Incorrect words practice completed');
+            });
           }
+        }, 2000);
+      }, 1000);
+    }
+    
+    return {
+      ...prevState,
+      results: newResults,
+      currentWordIndex: newWordIndex,
+      score: scoreMessage
+    };
+  });
+};
+
+// Also update the startWordTimeout function to auto-call incorrect words handler:
+const startWordTimeout = (wordIndex) => {
+  wordTimeout = setTimeout(() => {
+    setSpeechState(prevState => {
+      const { words, results } = prevState;
+      
+      if (wordIndex >= words.length || wordIndex !== prevState.currentWordIndex) {
+        return prevState;
+      }
+      
+      const newResults = [...results];
+      const currentWord = words[wordIndex];
+      
+      newResults[wordIndex] = "wrong";
+      
+      let nextIndex = wordIndex + 1;
+      while (nextIndex < words.length && words[nextIndex].length <= 2) {
+        newResults[nextIndex] = "correct";
+        nextIndex++;
+      }
+      
+      if (nextIndex < words.length) {
+        startWordTimeout(nextIndex);
+      }
+      
+      // Check if all words are completed
+      if (nextIndex >= words.length) {
+        setTimeout(() => {
+          recognition?.stop();
+          const score = newResults.filter(r => r === "correct").length;
+          setSpeechState(prev => ({
+            ...prev,
+            recognizing: false,
+            score: `🎉 Final Score: ${score}/${words.length}`
+          }));
           
-        } else {
-          // Regular mode (L1, L2) - word by word, ALWAYS move to next
-          const expected = words[currentWordIndex].toLowerCase().replace(/[^\w\s]/g, '');
-          const spokenLower = spoken.toLowerCase().trim().replace(/[^\w\s]/g, '');
-          
-          const matched = spokenLower.includes(expected) || expected.includes(spokenLower);
-          newResults[currentWordIndex] = matched ? "correct" : "wrong";
-          
-          // ALWAYS move to next word regardless of correct/wrong
-          let nextIndex = currentWordIndex + 1;
-          while (nextIndex < words.length && words[nextIndex].length <= 2) {
-            newResults[nextIndex] = "correct"; // Auto-mark short words
-            nextIndex++;
-          }
-          newWordIndex = nextIndex;
-          
-          if (matched) {
-            scoreMessage = `✅ Correct! "${expected}"`;
-          } else {
-            scoreMessage = `❌ Said "${spokenLower}", expected "${expected}"`;
-          }
-        }
-        
-        // Start timeout for next word if not finished (only for L1/L2)
-        if (newWordIndex < words.length && currentLevel !== 'L3') {
-          startWordTimeout(newWordIndex);
-        }
-        
-        // Check if all words are completed
-        if (newWordIndex >= words.length) {
+          // AUTO-CALL: Automatically call incorrect words handler after timeout completion
           setTimeout(() => {
-            recognition?.stop();
-            const score = newResults.filter(r => r === "correct").length;
-            setSpeechState(prev => ({
-              ...prev,
-              recognizing: false,
-              score: `🎉 Final Score: ${score}/${words.length}`
-            }));
-          }, 1000);
-        }
-        
-        return {
-          ...prevState,
-          results: newResults,
-          currentWordIndex: newWordIndex,
-          score: scoreMessage
-        };
-      });
-    };
-
-    const startWordTimeout = (wordIndex) => {
-      wordTimeout = setTimeout(() => {
-        setSpeechState(prevState => {
-          const { words, results } = prevState;
-          
-          if (wordIndex >= words.length || wordIndex !== prevState.currentWordIndex) {
-            return prevState; // Word already processed or finished
-          }
-          
-          const newResults = [...results];
-          newResults[wordIndex] = "wrong"; // Mark as wrong due to timeout
-          
-          // Move to next word
-          let nextIndex = wordIndex + 1;
-          while (nextIndex < words.length && words[nextIndex].length <= 2) {
-            newResults[nextIndex] = "correct"; // Auto-mark short words
-            nextIndex++;
-          }
-          
-          // Start timeout for next word if not finished
-          if (nextIndex < words.length) {
-            startWordTimeout(nextIndex);
-          }
-          
-          // Check if all words are completed
-          if (nextIndex >= words.length) {
-            setTimeout(() => {
-              recognition?.stop();
-              const score = newResults.filter(r => r === "correct").length;
-              setSpeechState(prev => ({
-                ...prev,
-                recognizing: false,
-                score: `🎉 Final Score: ${score}/${words.length}`
-              }));
-            }, 1000);
-          }
-          
-          return {
-            ...prevState,
-            results: newResults,
-            currentWordIndex: nextIndex,
-            score: `⏰ Time's up! Expected "${words[wordIndex]}"`
-          };
-        });
-      }, 5000); // 5 second timeout
-    };
-
+            const wrongWords = [];
+            newResults.forEach((result, index) => {
+              if (result === 'wrong') {
+                wrongWords.push(words[index]);
+              }
+            });
+            
+            if (wrongWords.length > 0 && incorrectWordsHandlerRef.current) {
+              incorrectWordsHandlerRef.current.startCorrection(wrongWords, () => {
+                console.log('Incorrect words practice completed');
+              });
+            }
+          }, 2000);
+        }, 1000);
+      }
+      
+      return {
+        ...prevState,
+        results: newResults,
+        currentWordIndex: nextIndex,
+        score: `⏰ Time's up! Expected "${currentWord}"`
+      };
+    });
+  }, 5000);
+};
     window.toggleImageRecognition = () => {
-      if (speechState.recognizing) {
-        recognition?.stop();
-        autoRestartEnabled = false;
-        setSpeechState(prev => ({ ...prev, recognizing: false }));
-      } else {
+      if (!speechState.recognizing) {
         if (speechState.currentWordIndex === 0) {
           initWords();
         }
-        autoRestartEnabled = true; // Enable auto-restart
-        recognition?.start();
+        autoRestartEnabled = true;
+        try {
+          recognition?.start();
+        } catch (e) {
+          console.log("Recognition start failed:", e);
+        }
       }
     };
 
@@ -585,7 +612,7 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
             value={speechState.currentLevel}
             onChange={(e) => setSpeechState(prev => ({ ...prev, currentLevel: e.target.value }))}
           >
-            <option value="L2">Beginner (0.5s per word)</option>
+            <option value="L1">Beginner (0.5s per word)</option>
             <option value="L2">Advance (0.3s per word)</option>
             <option value="L3">Expert (Full Sentence)</option>
           </select>
@@ -624,12 +651,193 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
         
         <div className="practice-controls">
           <button 
-            className={`start-button ${speechState.recognizing ? 'stop-btn' : ''}`}
+            className="start-button"
             onClick={() => window.toggleImageRecognition && window.toggleImageRecognition()}
+            disabled={speechState.recognizing}
           >
-            {speechState.recognizing ? '🛑 Stop' : '🎤 Start'}
+            {speechState.recognizing ? '🎤 Speaking...' : '🎤 Start'}
           </button>
         </div>
+       
+        
+        <style jsx>{`
+          .image-practice-view {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+          }
+          
+          .practice-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 20px;
+          }
+          
+          .back-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 15px;
+            background: #74b9ff;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+          }
+          
+          .back-btn:hover {
+            background: #0984e3;
+          }
+          
+          .mobile-instructions {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            color: #856404;
+            text-align: center;
+          }
+          
+          .level-selector-container {
+            margin-bottom: 20px;
+            text-align: center;
+          }
+          
+          .level-selector-container label {
+            font-weight: bold;
+            margin-right: 10px;
+          }
+          
+          .level-selector-container select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+          }
+          
+          .level-info {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            font-weight: bold;
+          }
+          
+          .error-message {
+            background: #ff7675;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+            text-align: center;
+          }
+          
+          .words-container {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            min-height: 100px;
+            line-height: 2;
+            font-size: 18px;
+          }
+          
+          .word {
+            display: inline-block;
+            padding: 4px 8px;
+            margin: 2px;
+            border-radius: 4px;
+            transition: all 0.3s ease;
+          }
+          
+          .word.correct {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+          }
+          
+          .word.wrong {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+          }
+          
+          .word.highlight {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+            animation: pulse 1s infinite;
+          }
+          
+          @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+          }
+          
+          .score-display {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #e3f2fd;
+            border-radius: 8px;
+            font-size: 18px;
+            font-weight: bold;
+            color: #1976d2;
+          }
+          
+          .practice-controls {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+          }
+          
+          .start-button {
+            padding: 15px 30px;
+            background: #2ed573;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s ease;
+          }
+          
+          .start-button:hover:not(:disabled) {
+            background: #26d063;
+          }
+          
+          .start-button:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+          }
+          
+          .incorrect-words-btn {
+            padding: 12px 24px;
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            border-radius: 12px;
+            font-size: 16px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.3s ease;
+          }
+          
+          .incorrect-words-btn:hover:not(:disabled) {
+            background: #ee5a52;
+          }
+          
+          .incorrect-words-btn:disabled {
+            background: #95a5a6;
+            cursor: not-allowed;
+          }
+        `}</style>
       </div>
     );
   }
@@ -645,7 +853,6 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
       </div>
 
       <div className="upload-options">
-        {/* File Upload */}
         <div className="upload-option">
           <label htmlFor="imageInput" className="upload-label">
             <Upload size={24} />
@@ -660,7 +867,6 @@ const ImageUpload = ({ onTextExtracted, onBack }) => {
           />
         </div>
 
-        {/* Camera Button */}
         <div className="upload-option">
           <button className="camera-btn" onClick={openCamera}>
             <Camera size={24} />

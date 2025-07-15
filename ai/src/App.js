@@ -10,7 +10,9 @@ import Warmup from './Dashboard/warmup';
 import IncorrectWordsHandler from './Dashboard/incorrect';
 import Register from './security/register';
 import DashboardSub from './Dashboard/dashboardsub';
-import AdminDashboard from './adminDashboard/AdminDashboard'; // ✅ Add this import
+import DailyChallenge from './Dashboard/DailyChallenge';
+import AdminDashboard from './adminDashboard/AdminDashboard';
+import DailyTaskManager from './adminDashboard/DailyTaskManager'; // ✅ Add this import
 
 import './App.css';
 
@@ -24,10 +26,13 @@ function App() {
         <Route path="/dashboard/sub" element={<DashboardSub />} />
         <Route path="/readMyBook" element={<ReadMyBook />} />
         <Route path="/warmup" element={<Warmup />} />
+        <Route path="/DailyChallenge" element={<DailyChallenge />} />
         <Route path="/incorrect" element={<IncorrectWordsHandler />} />
         <Route path="/upload" element={<ImageUpload />} />
         <Route path="/Register" element={<Register />} />
         <Route path="/admin" element={<AdminDashboard />} /> {/* ✅ Add this route */}
+        <Route path="/DailyTaskManager" element={<DailyTaskManager />} /> {/* ✅ Add this route */}
+
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
