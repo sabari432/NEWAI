@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Star, Trophy, Target, Calendar, Clock, Award, Zap, Volume2 } from 'lucide-react';
-import { API_BASE_URL } from '../config'; // Import API_BASE_URL
+import { Star, Trophy, Target, Calendar, Clock, Award, Zap } from 'lucide-react';
+import { API_BASE_URL } from '../config';
 import './DailyChallenge.css';
 
-function DailyChallenge({ onBack, saveWrongWords, setError }) {
+function DailyChallenge({ onBack, saveWrongWords, setError, studentId = null }) {
   const [availableTasks, setAvailableTasks] = useState([]);
   const [selectedTask, setSelectedTask] = useState(null);
-  const [challengeState, setChallengeState] = useState('loading'); // loading, menu, active, completed
+  const [challengeState, setChallengeState] = useState(studentId ? 'loading' : 'student_selection');
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [completedSentences, setCompletedSentences] = useState(0);
   const [totalAccuracy, setTotalAccuracy] = useState(0);
@@ -14,8 +14,10 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
   const [challengeStartTime, setChallengeStartTime] = useState(null);
   const [earnedStars, setEarnedStars] = useState(0);
   const [allWrongWords, setAllWrongWords] = useState([]);
+  const [studentInfo, setStudentInfo] = useState(null);
+  const [students, setStudents] = useState([]);
+  const [selectedStudentId, setSelectedStudentId] = useState(studentId);
   
-  // Speech recognition states
   const [speechState, setSpeechState] = useState({
     words: [],
     currentWordIndex: 0,
@@ -25,86 +27,13 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
     errorMessage: ''
   });
 
-  // API request function
-  const apiRequest = async (endpoint, options = {}) => {
-    try {
-      const url = `${API_BASE_URL}/${endpoint}`;
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          ...options.headers
-        },
-        ...options
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.error('API Request Error:', error);
-      throw error;
-    }
-  };
-
-  // Fetch available daily tasks on component mount
-  useEffect(() => {
-    fetchDailyTasks();
-  }, []);
-
-  // Helper function to get today's date in YYYY-MM-DD format
-  const getTodayDateString = () => {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = String(today.getMonth() + 1).padStart(2, '0');
-    const day = String(today.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  // Helper function to normalize date string
-  const normalizeDateString = (dateString) => {
-    const date = new Date(dateString);
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  };
-
-  const fetchDailyTasks = async () => {
-    try {
-      setChallengeState('loading');
-      const response = await apiRequest('get_daily_task.php');
-      
-      console.log('API Response:', response); // Debug log
-      
-      if (response.success && response.tasks) {
-        // Filter tasks for today and future dates
-        const today = getTodayDateString();
-        console.log('Today:', today); // Debug log
-        
-        const availableToday = response.tasks.filter(task => {
-          const taskDate = normalizeDateString(task.due_date);
-          console.log('Task date:', taskDate, 'Due date:', task.due_date); // Debug log
-          return taskDate >= today;
-        });
-        
-        console.log('Available tasks:', availableToday); // Debug log
-        setAvailableTasks(availableToday);
-        setChallengeState('menu');
-      } else {
-        console.error('API Error:', response); // Debug log
-        setError('Failed to load daily tasks');
-        setChallengeState('menu');
-      }
-    } catch (error) {
-      console.error('Fetch Error:', error); // Debug log
-      setError('Error fetching daily tasks: ' + error.message);
-      setChallengeState('menu');
-    }
-  };
+  // Fetch daily tasks on component mount
+ useEffect(() => {
+  if (studentId) {
+    setSelectedStudentId(studentId);
+  }
+  fetchDailyTasks();
+}, []);
 
   // Timer effect
   useEffect(() => {
@@ -122,14 +51,63 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
     }
   }, [challengeState, timeLeft]);
 
-  // Check if today's challenge is completed for a specific task
-  const isTodayCompleted = (taskId) => {
-    const today = getTodayDateString();
-    const completed = localStorage.getItem(`dailyChallenge_${taskId}_${today}`);
-    return completed === 'true';
+  const fetchDailyTasks = async () => {
+  try {
+    setChallengeState('loading');
+    const response = await fetch(`${API_BASE_URL}/get_daily_task_std.php`);
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+
+    if (data.success) {
+      setStudents(data.students || []);
+      setAvailableTasks(data.tasks || []);
+      
+      // If studentId is already provided
+      if (studentId && data.students?.length > 0) {
+        const student = data.students.find(s => s.id === studentId);
+        if (student) {
+          setStudentInfo(student);
+          setSelectedStudentId(studentId);
+          setChallengeState('menu');
+        } else {
+          setChallengeState('student_selection');
+        }
+      } else {
+        setChallengeState('student_selection');
+      }
+    } else {
+      setError(data.error || 'Failed to load data');
+      setChallengeState('student_selection');
+    }
+  } catch (error) {
+    setError('Error fetching data: ' + error.message);
+    setChallengeState('student_selection');
+  }
+};
+const selectStudent = (id) => {
+  const student = students.find(s => s.id === id);
+  if (student) {
+    setSelectedStudentId(id);
+    setStudentInfo(student);
+    setChallengeState('menu');
+  }
+};
+
+
+  const getTodayDateString = () => {
+    const today = new Date();
+    return today.toISOString().split('T')[0];
   };
 
-  // Mark today's challenge as completed for a specific task
+  const isTodayCompleted = (taskId) => {
+    const today = getTodayDateString();
+    return localStorage.getItem(`dailyChallenge_${taskId}_${today}`) === 'true';
+  };
+
   const markTodayCompleted = (taskId) => {
     const today = getTodayDateString();
     localStorage.setItem(`dailyChallenge_${taskId}_${today}`, 'true');
@@ -150,7 +128,6 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
 
   const initializeSpeechRecognition = (task) => {
     const currentSentence = task.sentences[currentSentenceIndex];
-    
     if (!currentSentence) return;
 
     const words = currentSentence.split(" ");
@@ -186,21 +163,12 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
     let canValidate = false;
 
     recognition.onstart = () => {
-      setSpeechState(prev => ({
-        ...prev,
-        recognizing: true,
-        errorMessage: ''
-      }));
-      setTimeout(() => {
-        canValidate = true;
-      }, 500);
+      setSpeechState(prev => ({...prev, recognizing: true, errorMessage: ''}));
+      setTimeout(() => canValidate = true, 500);
     };
 
     recognition.onend = () => {
-      setSpeechState(prev => ({
-        ...prev,
-        recognizing: false
-      }));
+      setSpeechState(prev => ({...prev, recognizing: false}));
     };
 
     recognition.onerror = (e) => {
@@ -226,7 +194,6 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
       }
     };
 
-    // Store recognition instance for starting
     window.startChallengeRecognition = () => {
       if (!speechState.recognizing) {
         try {
@@ -237,17 +204,11 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
       }
     };
 
-    // Auto-stop after 15 seconds
-    setTimeout(() => {
-      if (recognition) {
-        recognition.stop();
-      }
-    }, 15000);
+    setTimeout(() => recognition.stop(), 15000);
   };
 
   const validateSentence = (spoken, words, initialResults) => {
     const spokenWords = spoken.toLowerCase().trim().split(/\s+/);
-    const targetWords = words.map(w => w.toLowerCase());
     const newResults = [...initialResults];
     const wrongWords = [];
     
@@ -272,7 +233,6 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
     const correctCount = newResults.filter(r => r === "correct").length;
     const accuracy = Math.round((correctCount / words.length) * 100);
     
-    // Update speech state
     setSpeechState(prev => ({
       ...prev,
       results: newResults,
@@ -280,28 +240,22 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
       score: `${correctCount}/${words.length} words correct (${accuracy}%)`
     }));
 
-    // Add wrong words to collection
     if (wrongWords.length > 0) {
       setAllWrongWords(prev => [...prev, ...wrongWords]);
     }
 
-    // Update challenge progress
     const newCompletedSentences = completedSentences + 1;
     const newTotalAccuracy = ((totalAccuracy * completedSentences) + accuracy) / newCompletedSentences;
     
     setCompletedSentences(newCompletedSentences);
     setTotalAccuracy(newTotalAccuracy);
 
-    // Check if challenge is completed
     setTimeout(() => {
       if (newCompletedSentences >= selectedTask.sentences.length) {
         completeChallengeCheck(newTotalAccuracy, selectedTask);
       } else {
-        // Move to next sentence
         setCurrentSentenceIndex(prev => prev + 1);
-        setTimeout(() => {
-          initializeSpeechRecognition(selectedTask);
-        }, 2000);
+        setTimeout(() => initializeSpeechRecognition(selectedTask), 2000);
       }
     }, 3000);
   };
@@ -314,20 +268,18 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
     let stars = 0;
     if (withinTimeLimit && accuracyMet) {
       stars = task.stars_reward;
-      if (finalAccuracy >= 90) stars += 5; // Bonus for high accuracy
-      if (timeSpent <= task.time_limit * 0.7) stars += 5; // Bonus for speed
+      if (finalAccuracy >= 90) stars += 5;
+      if (timeSpent <= task.time_limit * 0.7) stars += 5;
     } else if (accuracyMet) {
-      stars = Math.floor(task.stars_reward * 0.7); // Partial credit
+      stars = Math.floor(task.stars_reward * 0.7);
     }
 
     setEarnedStars(stars);
     
-    // Save wrong words
     if (allWrongWords.length > 0 && saveWrongWords) {
       saveWrongWords(allWrongWords);
     }
 
-    // Mark as completed if successful
     if (stars > 0) {
       markTodayCompleted(task.id);
     }
@@ -360,6 +312,13 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
     });
   };
 
+  const backToStudentSelection = () => {
+    setSelectedStudentId(null);
+    setStudentInfo(null);
+    setAvailableTasks([]);
+    setChallengeState('student_selection');
+  };
+
   const getLevelColor = (level) => {
     switch (level) {
       case 'beginner': return '#4CAF50';
@@ -378,14 +337,58 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
     }
   };
 
+  // Student Selection View
+  if (challengeState === 'student_selection') {
+    return (
+      <div className="daily-challenge-container">
+        <div className="practice-header">
+          <button className="back-btn" onClick={selectedStudentId ? backToStudentSelection : onBack}>
+            ← Back to {selectedStudentId ? 'Student Selection' : 'Dashboard'}
+          </button>
+          <h2>🏆 Daily Challenge</h2>
+        </div>
+
+        <div className="student-selection">
+          <h3>Select a Student:</h3>
+          
+          {students.length > 0 ? (
+            <div className="students-grid">
+              {students.map(student => (
+                <div key={student.id} className="student-card">
+                  <div className="student-info">
+                    <h4>👤 {student.name}</h4>
+                    <p>Class: {student.class_name || 'No Class'} {student.section ? `- ${student.section}` : ''}</p>
+                    <p>School: {student.school || 'Not specified'}</p>
+                    <div className="student-stats">
+                      <span className="stat">⭐ {student.stars || 0} stars</span>
+                      <span className="stat">📊 Level: {student.level || 'beginner'}</span>
+                    </div>
+                  </div>
+                  <button 
+                    className="select-student-btn"
+                    onClick={() => selectStudent(student.id)}
+                  >
+                    Select Student
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="no-students">
+              <p>No students found in the database.</p>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   // Loading View
   if (challengeState === 'loading') {
     return (
       <div className="daily-challenge-container">
         <div className="practice-header">
-          <button className="back-btn" onClick={onBack}>
-            ← Back to Dashboard
-          </button>
+          <button className="back-btn" onClick={onBack}>← Back to Dashboard</button>
           <h2>🏆 Daily Challenge</h2>
         </div>
         <div className="loading-container">
@@ -397,32 +400,14 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
   }
 
   // Menu View
-    if (challengeState === 'menu') {
+  if (challengeState === 'menu') {
     const today = getTodayDateString();
-    console.log('Menu view - Today:', today);
-    console.log('Menu view - Available tasks:', availableTasks);
-    
-    // Show tasks for today AND future tasks (so students can see what's coming)
-    const todayTasks = availableTasks.filter(task => {
-      const taskDate = normalizeDateString(task.due_date);
-      console.log('Menu filter - Task date:', taskDate, 'Today:', today);
-      return taskDate === today;
-    });
-    
-    const futureTasks = availableTasks.filter(task => {
-      const taskDate = normalizeDateString(task.due_date);
-      return taskDate > today;
-    });
-    
-    console.log('Today tasks:', todayTasks);
-    console.log('Future tasks:', futureTasks);
+    const todayTasks = availableTasks.filter(task => task.due_date === today);
 
     return (
       <div className="daily-challenge-container">
         <div className="practice-header">
-          <button className="back-btn" onClick={onBack}>
-            ← Back to Dashboard
-          </button>
+          <button className="back-btn" onClick={onBack}>← Back to Dashboard</button>
           <h2>🏆 Daily Challenge</h2>
         </div>
 
@@ -431,14 +416,16 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
             <Calendar className="calendar-icon" />
             <span>Today's Challenges - {new Date().toLocaleDateString()}</span>
           </div>
-          {/* Debug info - remove in production */}
-          <div style={{ fontSize: '12px', color: '#666', marginTop: '10px' }}>
-            Debug: Total tasks: {availableTasks.length}, Today: {todayTasks.length}, Future: {futureTasks.length}
-          </div>
+          {studentInfo && (
+            <div className="student-info">
+              <span>Welcome, {studentInfo.name}!</span>
+              <span>Class: {studentInfo.class_name} - {studentInfo.section}</span>
+            </div>
+          )}
         </div>
 
         <div className="challenges-section">
-          <h3>Today's Challenges:</h3>
+          <h3>Available Challenges:</h3>
           
           {todayTasks.length > 0 ? (
             <div className="challenges-grid">
@@ -492,11 +479,6 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
                       <div className="challenge-sentences">
                         <span>{task.sentences?.length || 0} sentences to read</span>
                       </div>
-                      {task.teacher_name && (
-                        <div className="challenge-teacher">
-                          <span>By: {task.teacher_name}</span>
-                        </div>
-                      )}
                     </div>
 
                     <div className="challenge-actions">
@@ -523,79 +505,8 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
             </div>
           ) : (
             <div className="no-challenges">
-              <p>No challenges available for today.</p>
+              <p>No challenges available for today. Check back later!</p>
             </div>
-          )}
-
-          {futureTasks.length > 0 && (
-            <>
-              <h3 style={{ marginTop: '30px' }}>Upcoming Challenges:</h3>
-              <div className="challenges-grid">
-                {futureTasks.map(task => (
-                  <div key={task.id} className="challenge-card upcoming">
-                    <div className="challenge-header">
-                      <div className="challenge-title">
-                        <h4>{getLevelIcon(task.level)} {task.title}</h4>
-                        <span 
-                          className="challenge-level"
-                          style={{ 
-                            backgroundColor: getLevelColor(task.level),
-                            color: 'white',
-                            padding: '4px 8px',
-                            borderRadius: '12px',
-                            fontSize: '12px'
-                          }}
-                        >
-                          {task.level}
-                        </span>
-                      </div>
-                      <div className="upcoming-badge">
-                        <Calendar className="calendar-icon" />
-                        <span>Due: {new Date(task.due_date).toLocaleDateString()}</span>
-                      </div>
-                    </div>
-                    
-                    <p className="challenge-description">{task.description}</p>
-                    
-                    <div className="challenge-stats">
-                      <div className="challenge-stat">
-                        <Target className="stat-icon" />
-                        <span>{task.target_accuracy}% accuracy</span>
-                      </div>
-                      <div className="challenge-stat">
-                        <Clock className="stat-icon" />
-                        <span>{formatTime(task.time_limit)}</span>
-                      </div>
-                      <div className="challenge-stat">
-                        <Star className="stat-icon" />
-                        <span>{task.stars_reward} stars</span>
-                      </div>
-                    </div>
-
-                    <div className="challenge-meta">
-                      <div className="challenge-sentences">
-                        <span>{task.sentences?.length || 0} sentences to read</span>
-                      </div>
-                      {task.teacher_name && (
-                        <div className="challenge-teacher">
-                          <span>By: {task.teacher_name}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="challenge-actions">
-                      <button 
-                        className="start-challenge-btn"
-                        disabled={true}
-                        style={{ opacity: 0.6 }}
-                      >
-                        🗓️ Available on {new Date(task.due_date).toLocaleDateString()}
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
           )}
         </div>
       </div>
@@ -609,9 +520,7 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
     return (
       <div className="daily-challenge-container">
         <div className="challenge-header">
-          <button className="back-btn" onClick={() => setChallengeState('menu')}>
-            ← Back to Menu
-          </button>
+          <button className="back-btn" onClick={() => setChallengeState('menu')}>← Back to Menu</button>
           <h2>🏆 {selectedTask.title}</h2>
         </div>
 
@@ -632,10 +541,7 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
           </div>
           
           <div className="progress-bar">
-            <div 
-              className="progress-fill" 
-              style={{ width: `${progress}%` }}
-            ></div>
+            <div className="progress-fill" style={{ width: `${progress}%` }}></div>
           </div>
         </div>
 
@@ -659,14 +565,10 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
         </div>
 
         {speechState.errorMessage && (
-          <div className="error-message">
-            {speechState.errorMessage}
-          </div>
+          <div className="error-message">{speechState.errorMessage}</div>
         )}
 
-        <div className="score-display">
-          {speechState.score}
-        </div>
+        <div className="score-display">{speechState.score}</div>
 
         <div className="practice-controls">
           <button 
@@ -693,11 +595,7 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
 
         <div className="challenge-results">
           <div className="result-icon">
-            {success ? (
-              <Trophy className="trophy-large success" />
-            ) : (
-              <Target className="target-large" />
-            )}
+            {success ? <Trophy className="trophy-large success" /> : <Target className="target-large" />}
           </div>
 
           <div className="result-stats">
@@ -744,12 +642,8 @@ function DailyChallenge({ onBack, saveWrongWords, setError }) {
         </div>
 
         <div className="challenge-actions">
-          <button className="back-btn" onClick={onBack}>
-            🏠 Back to Dashboard
-          </button>
-          <button className="retry-btn" onClick={resetChallenge}>
-            🔄 Try Again
-          </button>
+          <button className="back-btn" onClick={onBack}>🏠 Back to Dashboard</button>
+          <button className="retry-btn" onClick={resetChallenge}>🔄 Try Again</button>
         </div>
       </div>
     );
