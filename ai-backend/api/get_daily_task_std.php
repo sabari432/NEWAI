@@ -1,18 +1,16 @@
 <?php
-// Handle preflight request for CORS
+// Handle preflight for CORS
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
     header("Access-Control-Allow-Origin: http://localhost:3000");
-    header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-    header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
+    header("Access-Control-Allow-Methods: GET, POST, OPTIONS");
+    header("Access-Control-Allow-Headers: Content-Type");
     header("Access-Control-Allow-Credentials: true");
-    http_response_code(200);
-    exit();
+    exit(0);
 }
 
-// Set CORS headers
+session_start(); // for reading session or cookies
+
 header("Access-Control-Allow-Origin: http://localhost:3000");
-header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
-header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
 header("Access-Control-Allow-Credentials: true");
 header("Content-Type: application/json");
 
@@ -26,70 +24,44 @@ try {
     $pdo = new PDO("mysql:host=$host;dbname=$dbname", $username, $password);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch (PDOException $e) {
-    echo json_encode(['success' => false, 'error' => 'DB connect error: ' . $e->getMessage()]);
+    echo json_encode(['success' => false, 'error' => 'DB connection failed']);
     exit();
 }
 
 try {
     $today = date('Y-m-d');
 
-    // Step 1: Get all teacher_ids from daily_tasks
-    $teacherStmt = $pdo->query("SELECT DISTINCT teacher_id FROM daily_tasks WHERE teacher_id IS NOT NULL");
-    $teacherIds = $teacherStmt->fetchAll(PDO::FETCH_COLUMN);
+    // 1. Get student_profile_id from cookie
+    $studentId = $_COOKIE['student_profile_id'] ?? null;
 
-    if (empty($teacherIds)) {
-        echo json_encode(['success' => true, 'tasks' => [], 'students' => [], 'message' => 'No teachers found.']);
-        exit;
+    if (!$studentId) {
+        echo json_encode(['success' => false, 'error' => 'Student ID not found in cookies']);
+        exit();
     }
 
-    // Step 2: Get class IDs from classes where teacher_id matches
-    $placeholders = implode(',', array_fill(0, count($teacherIds), '?'));
-    $classStmt = $pdo->prepare("SELECT id, name, section, teacher_id FROM classes WHERE teacher_id IN ($placeholders)");
-    $classStmt->execute($teacherIds);
-    $classes = $classStmt->fetchAll(PDO::FETCH_ASSOC);
+    // 2. Fetch student info
+    $stmt = $pdo->prepare("SELECT id, name, class_id, school, level, stars FROM student WHERE id = ?");
+    $stmt->execute([$studentId]);
+    $student = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if (empty($classes)) {
-        echo json_encode(['success' => true, 'tasks' => [], 'students' => [], 'message' => 'No classes found.']);
-        exit;
+    if (!$student) {
+        echo json_encode(['success' => false, 'error' => 'Student not found']);
+        exit();
     }
 
-    // Extract class IDs
-    $classIds = array_column($classes, 'id');
-
-    // Step 3: Get students in those classes
-    $placeholders2 = implode(',', array_fill(0, count($classIds), '?'));
-    $studentStmt = $pdo->prepare("SELECT id, name, class_id, school, level, stars FROM student WHERE class_id IN ($placeholders2)");
-    $studentStmt->execute($classIds);
-    $students = $studentStmt->fetchAll(PDO::FETCH_ASSOC);
-
-    // Step 4: Get daily tasks for those teacher_ids (today and upcoming)
-    $taskStmt = $pdo->prepare("
-        SELECT 
-            dt.id,
-            dt.title,
-            dt.description,
-            dt.level,
-            dt.target_accuracy,
-            dt.time_limit,
-            dt.stars_reward,
-            dt.due_date,
-            dt.created_at,
-            dt.teacher_id
-        FROM daily_tasks dt
-        WHERE dt.teacher_id IN ($placeholders)
-        AND dt.due_date >= ?
-        ORDER BY dt.due_date ASC, dt.created_at DESC
-    ");
-    $taskStmt->execute([...$teacherIds, $today]);
+    // 3. Call stored procedure to get tasks for student
+    $taskStmt = $pdo->prepare("CALL GetTasksForStudent(?)");
+    $taskStmt->execute([$studentId]);
     $tasks = $taskStmt->fetchAll(PDO::FETCH_ASSOC);
+    $taskStmt->closeCursor();
 
-    // Step 5: Fetch sentences for each task
+    // 4. Add sentences to each task
     foreach ($tasks as &$task) {
-        $sentencesStmt = $pdo->prepare("SELECT sentence FROM daily_task_sentences WHERE task_id = ? ORDER BY id");
-        $sentencesStmt->execute([$task['id']]);
-        $task['sentences'] = $sentencesStmt->fetchAll(PDO::FETCH_COLUMN);
+        $sStmt = $pdo->prepare("SELECT sentence FROM daily_task_sentences WHERE task_id = ? ORDER BY id");
+        $sStmt->execute([$task['id']]);
+        $task['sentences'] = $sStmt->fetchAll(PDO::FETCH_COLUMN);
 
-        // Convert numeric values
+        // Convert to int
         $task['id'] = (int)$task['id'];
         $task['target_accuracy'] = (int)$task['target_accuracy'];
         $task['time_limit'] = (int)$task['time_limit'];
@@ -99,17 +71,14 @@ try {
     echo json_encode([
         'success' => true,
         'today' => $today,
+        'student' => $student,
         'tasks' => $tasks,
-        'students' => $students,
         'debug' => [
-            'teacher_count' => count($teacherIds),
-            'class_count' => count($classIds),
-            'student_count' => count($students),
-            'task_count' => count($tasks)
+            'task_count' => count($tasks),
+            'student_id' => $studentId,
+            'class_id' => $student['class_id']
         ]
     ]);
-} catch (PDOException $e) {
-    echo json_encode(['success' => false, 'error' => 'DB error: ' . $e->getMessage()]);
 } catch (Exception $e) {
     echo json_encode(['success' => false, 'error' => 'Server error: ' . $e->getMessage()]);
 }

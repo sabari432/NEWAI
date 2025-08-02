@@ -1,0 +1,362 @@
+/* Practice Page Styles */
+.practice-page {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  padding: 20px;
+}
+
+.practice-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.practice-header {
+  background: white;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 24px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.practice-header h2 {
+  margin: 0 0 8px 0;
+  color: #2d3748;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.practice-header p {
+  margin: 0;
+  color: #718096;
+  font-size: 14px;
+}
+
+/* Classes Grid */
+.classes-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.class-practice-card {
+  background: white;
+  border-radius: 12px;
+  padding: 20px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+}
+
+.class-practice-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  border-color: #667eea;
+}
+
+.class-card-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.class-icon {
+  width: 48px;
+  height: 48px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  border-radius: 12px;
+  padding: 12px;
+  margin-right: 16px;
+}
+
+.class-info h3 {
+  margin: 0 0 4px 0;
+  color: #2d3748;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.class-info p {
+  margin: 0;
+  color: #718096;
+  font-size: 14px;
+}
+
+.class-stats {
+  margin-bottom: 16px;
+}
+
+.stat-item {
+  display: flex;
+  align-items: center;
+  color: #4a5568;
+  font-size: 14px;
+}
+
+.stat-item .small-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 8px;
+  color: #667eea;
+}
+
+.class-card-footer {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 16px;
+}
+
+.view-students-btn {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 12px 16px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.3s ease;
+}
+
+.view-students-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.view-students-btn .small-icon {
+  margin-right: 8px;
+}
+
+/* Students Grid */
+.students-practice-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 24px;
+}
+
+.student-practice-card {
+  background: white;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+}
+
+.student-practice-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.15);
+  border-color: #667eea;
+}
+
+.student-card-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.student-avatar-large {
+  width: 64px;
+  height: 64px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  margin-right: 16px;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.student-details h3 {
+  margin: 0 0 6px 0;
+  color: #2d3748;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.student-school {
+  margin: 0 0 4px 0 !important;
+  color: #718096;
+  font-size: 14px;
+}
+
+.student-level {
+  margin: 0 !important;
+  color: #4a5568;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.student-practice-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: #f7fafc;
+  border-radius: 12px;
+}
+
+.practice-stat {
+  text-align: center;
+}
+
+.stat-icon {
+  width: 24px;
+  height: 24px;
+  margin: 0 auto 8px;
+  display: block;
+}
+
+.stat-icon.stars {
+  color: #fbbf24;
+}
+
+.stat-icon.streak {
+  color: #f59e0b;
+}
+
+.stat-icon.accuracy {
+  color: #10b981;
+}
+
+.wpm-icon {
+  font-size: 24px;
+  display: block;
+  text-align: center;
+  margin: 0 auto 8px;
+}
+
+.stat-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.stat-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #2d3748;
+  line-height: 1;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #718096;
+  margin-top: 2px;
+}
+
+.practice-card-footer {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 20px;
+}
+
+.start-practice-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  padding: 14px 20px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: white;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 16px;
+  transition: all 0.3s ease;
+}
+
+.start-practice-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.4);
+}
+
+.start-practice-btn .small-icon {
+  margin-right: 8px;
+}
+
+/* Empty State */
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.empty-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 20px;
+  color: #cbd5e0;
+}
+
+.empty-state h3 {
+  margin: 0 0 12px 0;
+  color: #4a5568;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.empty-state p {
+  margin: 0;
+  color: #718096;
+  font-size: 16px;
+}
+
+/* Loading State */
+.loading-container {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.loading {
+  color: white;
+  font-size: 18px;
+  font-weight: 500;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .practice-page {
+    padding: 16px;
+  }
+  
+  .classes-grid,
+  .students-practice-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .practice-header {
+    padding: 16px;
+  }
+  
+  .practice-header h2 {
+    font-size: 20px;
+  }
+  
+  .student-practice-stats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+  }
+  
+  .practice-stat {
+    display: flex;
+    align-items: center;
+    text-align: left;
+  }
+  
+  .stat-icon {
+    margin: 0 12px 0 0;
+  }
+  
+  .stat-info {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+}

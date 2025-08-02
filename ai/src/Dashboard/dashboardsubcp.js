@@ -809,33 +809,32 @@ function DashboardAdd() {
     </div>
     
     <div className="practice-controls">
-  <button 
-    className="start-button"
-    onClick={() => window.toggleRecognition && window.toggleRecognition()}
-    disabled={speechState.recognizing}
-  >
-    {speechState.recognizing ? '🎤 Listening...' : '🎤 Start'}
-  </button>
-  
-  {/* Navigation buttons */}
-  <div className="sentence-navigation">
-    <button 
-      className="nav-button prev-btn"
-      onClick={() => window.goToPreviousSentence && window.goToPreviousSentence()}
-      disabled={speechState.sentenceIndex === 0}
-    >
-      ← Previous
-    </button>
-    
-    <button 
-      className="nav-button next-btn"
-      onClick={() => window.goToNextSentence && window.goToNextSentence()}
-      disabled={speechState.recognizing || speechState.currentWordIndex < speechState.words.length}
-    >
-      Next →
-    </button>
-  </div>
-</div>
+      <button 
+        className={`start-button ${speechState.recognizing ? 'stop-btn' : ''}`}
+        onClick={() => window.toggleRecognition && window.toggleRecognition()}
+      >
+        {speechState.recognizing ? '🛑 Stop' : '🎤 Start'}
+      </button>
+      
+      {/* Navigation buttons */}
+      <div className="sentence-navigation">
+        <button 
+          className="nav-button prev-btn"
+          onClick={() => window.goToPreviousSentence && window.goToPreviousSentence()}
+          disabled={speechState.sentenceIndex === 0}
+        >
+          ← Previous
+        </button>
+        
+        <button 
+          className="nav-button next-btn"
+          onClick={() => window.goToNextSentence && window.goToNextSentence()}
+          disabled={speechState.recognizing || speechState.currentWordIndex < speechState.words.length}
+        >
+          Next →
+        </button>
+      </div>
+    </div>
   </div>
 );
 

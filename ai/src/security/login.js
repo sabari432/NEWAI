@@ -6,6 +6,7 @@ import './login.css';
 import { Link } from 'react-router-dom';
 import Register from './register';
 import { API_BASE_URL } from '../config';
+import TeacherDirectory from '../Master/TeacherDirectory';
 
 const LoginPage = () => {
   const navigate = useNavigate();
@@ -22,6 +23,16 @@ const LoginPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Check for admin credentials first
+    if (formData.email === 'admin@gmail.com' && formData.password === 'admin123') {
+      localStorage.setItem('admin_id', 'admin');
+      localStorage.setItem('admin_name', 'Administrator');
+      localStorage.setItem('user_type', 'admin');
+      navigate('./Master/admin');
+      return;
+    }
+    
     try {
       const response = await axios.post(`${API_BASE_URL}/login.php`, formData, {
         withCredentials: true,
@@ -30,9 +41,16 @@ const LoginPage = () => {
       if (response.data.success) {
         // Navigate based on user type
         if (response.data.user_type === 'student') {
+          localStorage.setItem('student_id', response.data.user.id);
+          localStorage.setItem('student_name', response.data.user.name);
+          localStorage.setItem('user_type', 'student');
           navigate('/dashboard/sub');
-        } else if (response.data.user_type === 'teacher') {
-          navigate('/dashboard/add');
+        }
+        else if (response.data.user_type === 'teacher') {
+          localStorage.setItem('teacher_id', response.data.user.id);
+          localStorage.setItem('teacher_name', response.data.user.name);
+          localStorage.setItem('user_type', 'teacher');
+          navigate('/admin');
         }
       } else {
         setError('Invalid email or password');

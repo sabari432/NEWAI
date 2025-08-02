@@ -3,10 +3,10 @@ import { Star, Trophy, Target, Calendar, Clock, Award, Zap } from 'lucide-react'
 import { API_BASE_URL } from '../config';
 import './DailyChallenge.css';
 
-function DailyChallenge({ onBack, saveWrongWords, setError, studentId = null }) {
+function DailyChallenge({ onBack, saveWrongWords, setError}) {
   const [availableTasks, setAvailableTasks] = useState([]);
   const [selectedTask, setSelectedTask] = useState(null);
-  const [challengeState, setChallengeState] = useState(studentId ? 'loading' : 'student_selection');
+  const [challengeState, setChallengeState] = useState('loading');
   const [currentSentenceIndex, setCurrentSentenceIndex] = useState(0);
   const [completedSentences, setCompletedSentences] = useState(0);
   const [totalAccuracy, setTotalAccuracy] = useState(0);
@@ -15,25 +15,40 @@ function DailyChallenge({ onBack, saveWrongWords, setError, studentId = null }) 
   const [earnedStars, setEarnedStars] = useState(0);
   const [allWrongWords, setAllWrongWords] = useState([]);
   const [studentInfo, setStudentInfo] = useState(null);
-  const [students, setStudents] = useState([]);
-  const [selectedStudentId, setSelectedStudentId] = useState(studentId);
+  
+  // Level system state
+  const [currentLevel, setCurrentLevel] = useState('L1');
   
   const [speechState, setSpeechState] = useState({
     words: [],
     currentWordIndex: 0,
     results: [],
     recognizing: false,
+    canValidate: false,
     score: '',
     errorMessage: ''
   });
 
+  // Level configuration
+  const levels = {
+    L1: { name: "Beginner", delay: 500, nextWordDelay: 80, timePerWord: 5000 },
+    L2: { name: "Advance", delay: 300, nextWordDelay: 10, timePerWord: 3000 },
+    L3: { name: "Expert", delay: 300, nextWordDelay: 1, fullSentence: true, timePerWord: 0 }
+  };
+
+  // Mobile detection
+  const isMobile = /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+  // Speech recognition variables - moved to component scope like dashboard
+  let recognition = null;
+  let autoRestartEnabled = false;
+  let canValidate = false;
+  let wordTimeout = null;
+
   // Fetch daily tasks on component mount
- useEffect(() => {
-  if (studentId) {
-    setSelectedStudentId(studentId);
-  }
-  fetchDailyTasks();
-}, []);
+  useEffect(() => {
+    fetchDailyTasks();
+  }, []);
 
   // Timer effect
   useEffect(() => {
@@ -51,10 +66,30 @@ function DailyChallenge({ onBack, saveWrongWords, setError, studentId = null }) 
     }
   }, [challengeState, timeLeft]);
 
-  const fetchDailyTasks = async () => {
+  // Cleanup effect
+  useEffect(() => {
+    return () => {
+      if (recognition) {
+        recognition.stop();
+      }
+      if (wordTimeout) {
+        clearTimeout(wordTimeout);
+      }
+    };
+  }, []);
+
+ const fetchDailyTasks = async () => {
   try {
     setChallengeState('loading');
-    const response = await fetch(`${API_BASE_URL}/get_daily_task_std.php`);
+    
+    // Remove the hardcoded student_id parameter - let PHP get it from session
+    const response = await fetch(`${API_BASE_URL}/get_daily_task_std.php`, {
+      method: 'GET',
+      credentials: 'include', // Important: This sends the session cookies
+      headers: {
+        'Content-Type': 'application/json',
+      }
+    });
     
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
@@ -63,40 +98,23 @@ function DailyChallenge({ onBack, saveWrongWords, setError, studentId = null }) 
     const data = await response.json();
 
     if (data.success) {
-      setStudents(data.students || []);
       setAvailableTasks(data.tasks || []);
       
-      // If studentId is already provided
-      if (studentId && data.students?.length > 0) {
-        const student = data.students.find(s => s.id === studentId);
-        if (student) {
-          setStudentInfo(student);
-          setSelectedStudentId(studentId);
-          setChallengeState('menu');
-        } else {
-          setChallengeState('student_selection');
-        }
-      } else {
-        setChallengeState('student_selection');
+      // Set student info from the response
+      if (data.student) {
+        setStudentInfo(data.student);
       }
+      
+      setChallengeState('menu');
     } else {
       setError(data.error || 'Failed to load data');
-      setChallengeState('student_selection');
+      setChallengeState('menu');
     }
   } catch (error) {
     setError('Error fetching data: ' + error.message);
-    setChallengeState('student_selection');
-  }
-};
-const selectStudent = (id) => {
-  const student = students.find(s => s.id === id);
-  if (student) {
-    setSelectedStudentId(id);
-    setStudentInfo(student);
     setChallengeState('menu');
   }
 };
-
 
   const getTodayDateString = () => {
     const today = new Date();
@@ -127,25 +145,43 @@ const selectStudent = (id) => {
   };
 
   const initializeSpeechRecognition = (task) => {
+    if (!task || !task.sentences || task.sentences.length === 0) {
+      console.error('Invalid task data for speech recognition');
+      return;
+    }
+    
     const currentSentence = task.sentences[currentSentenceIndex];
-    if (!currentSentence) return;
+    if (!currentSentence) {
+      console.error('No sentence found at index:', currentSentenceIndex);
+      return;
+    }
 
     const words = currentSentence.split(" ");
     const results = Array(words.length).fill(null);
     
+    // Find first word longer than 2 letters (same as dashboard)
+    let currentWordIndex = 0;
+    if (currentLevel !== 'L3') {
+      currentWordIndex = words.findIndex(word => word.length > 2);
+      if (currentWordIndex === -1) {
+        currentWordIndex = 0;
+      }
+    }
+    
     setSpeechState({
       words,
-      currentWordIndex: 0,
+      currentWordIndex,
       results,
       recognizing: false,
+      canValidate: false,
       score: '',
       errorMessage: ''
     });
 
-    setupSpeechRecognition(words, results);
+    setupSpeechRecognition();
   };
 
-  const setupSpeechRecognition = (words, initialResults) => {
+  const setupSpeechRecognition = () => {
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
       setSpeechState(prev => ({
@@ -155,28 +191,94 @@ const selectStudent = (id) => {
       return;
     }
 
-    const recognition = new SR();
+    recognition = new SR();
     recognition.lang = "en-US";
     recognition.continuous = true;
     recognition.interimResults = false;
 
-    let canValidate = false;
-
     recognition.onstart = () => {
-      setSpeechState(prev => ({...prev, recognizing: true, errorMessage: ''}));
-      setTimeout(() => canValidate = true, 500);
+      setSpeechState(prev => ({
+        ...prev,
+        recognizing: true,
+        errorMessage: ''
+      }));
+      
+      setTimeout(() => {
+        canValidate = true;
+        setSpeechState(prevState => {
+          if (prevState.currentWordIndex < prevState.words.length && currentLevel !== 'L3') {
+            startWordTimeout(prevState.currentWordIndex);
+          }
+          return { ...prevState, canValidate: true };
+        });
+      }, levels[currentLevel].delay);
+    };
+
+    recognition.onstop = () => {
+      if (wordTimeout) {
+        clearTimeout(wordTimeout);
+        wordTimeout = null;
+      }
     };
 
     recognition.onend = () => {
-      setSpeechState(prev => ({...prev, recognizing: false}));
+      if (wordTimeout) {
+        clearTimeout(wordTimeout);
+        wordTimeout = null;
+      }
+      
+      setSpeechState(prevState => {
+        const shouldContinue = autoRestartEnabled && 
+                              prevState.currentWordIndex < prevState.words.length && 
+                              currentLevel !== 'L3';
+        
+        if (shouldContinue) {
+          setTimeout(() => {
+            if (recognition && autoRestartEnabled) {
+              try {
+                recognition.start();
+              } catch (e) {
+                console.log("Recognition restart failed:", e);
+                setSpeechState(prev => ({ ...prev, recognizing: false }));
+              }
+            }
+          }, 100);
+        }
+        
+        return { 
+          ...prevState, 
+          recognizing: shouldContinue 
+        };
+      });
     };
 
     recognition.onerror = (e) => {
+      console.log("Recognition error:", e.error);
+      
+      if (wordTimeout) {
+        clearTimeout(wordTimeout);
+        wordTimeout = null;
+      }
+      
       setSpeechState(prev => ({
         ...prev,
         recognizing: false,
         errorMessage: `Error: ${e.error}. Please try again.`
       }));
+      
+      if (autoRestartEnabled && !['no-speech', 'aborted', 'not-allowed'].includes(e.error)) {
+        setTimeout(() => {
+          if (recognition && autoRestartEnabled) {
+            try {
+              recognition.start();
+              setSpeechState(prev => ({ ...prev, recognizing: true, errorMessage: '' }));
+            } catch (error) {
+              console.log("Error restart failed:", error);
+              setSpeechState(prev => ({ ...prev, recognizing: false }));
+            }
+          }
+        }, 500);
+      }
     };
 
     recognition.onresult = (e) => {
@@ -190,12 +292,14 @@ const selectStudent = (id) => {
       }
       
       if (finalTranscript.trim()) {
-        validateSentence(finalTranscript.trim(), words, initialResults);
+        validateWord(finalTranscript.trim());
       }
     };
 
+    // Create global functions like dashboard
     window.startChallengeRecognition = () => {
       if (!speechState.recognizing) {
+        autoRestartEnabled = true;
         try {
           recognition.start();
         } catch (error) {
@@ -204,45 +308,168 @@ const selectStudent = (id) => {
       }
     };
 
-    setTimeout(() => recognition.stop(), 15000);
+    window.stopChallengeRecognition = () => {
+      autoRestartEnabled = false;
+      if (recognition) {
+        recognition.stop();
+      }
+      if (wordTimeout) {
+        clearTimeout(wordTimeout);
+        wordTimeout = null;
+      }
+      setSpeechState(prev => ({ ...prev, recognizing: false }));
+    };
   };
 
-  const validateSentence = (spoken, words, initialResults) => {
-    const spokenWords = spoken.toLowerCase().trim().split(/\s+/);
-    const newResults = [...initialResults];
-    const wrongWords = [];
+  const validateWord = (spoken) => {
+    if (wordTimeout) {
+      clearTimeout(wordTimeout);
+      wordTimeout = null;
+    }
     
-    words.forEach((word, index) => {
-      if (word.length <= 2) {
-        newResults[index] = "correct";
-      } else {
-        const wordLower = word.toLowerCase();
-        const foundInSpoken = spokenWords.some(spokenWord => 
-          spokenWord.includes(wordLower) || wordLower.includes(spokenWord)
-        );
+    setSpeechState(prevState => {
+      const { words, currentWordIndex, results } = prevState;
+      
+      if (currentWordIndex >= words.length) return prevState;
+      
+      const newResults = [...results];
+      let newWordIndex = currentWordIndex;
+      let scoreMessage = "";
+      
+      if (currentLevel === 'L3') {
+        // Expert level - validate entire sentence (same as dashboard)
+        const spokenWords = spoken.toLowerCase().trim().split(/\s+/);
         
-        if (foundInSpoken) {
-          newResults[index] = "correct";
+        words.forEach((word, index) => {
+          if (word.length <= 2) {
+            newResults[index] = "correct";
+          } else {
+            const wordLower = word.toLowerCase();
+            const foundInSpoken = spokenWords.some(spokenWord => 
+              spokenWord.includes(wordLower) || wordLower.includes(spokenWord)
+            );
+            newResults[index] = foundInSpoken ? "correct" : "wrong";
+            
+            if (!foundInSpoken) {
+              setAllWrongWords(prev => [...prev, word]);
+            }
+          }
+        });
+        
+        newWordIndex = words.length;
+        
+        const correctCount = newResults.filter(r => r === "correct").length;
+        const totalWords = words.length;
+        const accuracy = Math.round((correctCount / totalWords) * 100);
+        
+        scoreMessage = accuracy >= 70 ? 
+          `🎉 Great! ${correctCount}/${totalWords} words correct (${accuracy}%)` :
+          `❌ ${correctCount}/${totalWords} words correct (${accuracy}%). Try again!`;
+        
+      } else {
+        // L1 and L2 - validate current word (same as dashboard)
+        const expected = words[currentWordIndex].toLowerCase();
+        const spokenLower = spoken.toLowerCase().trim();
+        
+        const matched = spokenLower.includes(expected) || expected.includes(spokenLower);
+        newResults[currentWordIndex] = matched ? "correct" : "wrong";
+        
+        if (!matched && words[currentWordIndex].length > 2) {
+          setAllWrongWords(prev => [...prev, words[currentWordIndex]]);
+        }
+        
+        newWordIndex = currentWordIndex + 1;
+        
+        // Auto-mark two-letter words as correct (same as dashboard)
+        while (newWordIndex < words.length && words[newWordIndex].length <= 2) {
+          newResults[newWordIndex] = "correct";
+          newWordIndex++;
+        }
+        
+        if (matched) {
+          scoreMessage = `✅ Correct! "${expected}"`;
         } else {
-          newResults[index] = "wrong";
-          wrongWords.push(word);
+          scoreMessage = `❌ Said "${spokenLower}", expected "${expected}"`;
         }
       }
+      
+      if (newWordIndex < words.length && currentLevel !== 'L3') {
+        startWordTimeout(newWordIndex);
+      }
+      
+      if (newWordIndex >= words.length) {
+        setTimeout(() => {
+          finishSentence(newResults, words);
+        }, currentLevel === 'L3' ? 3000 : 1000);
+      }
+      
+      return {
+        ...prevState,
+        results: newResults,
+        currentWordIndex: newWordIndex,
+        score: scoreMessage
+      };
     });
+  };
 
-    const correctCount = newResults.filter(r => r === "correct").length;
+  const startWordTimeout = (wordIndex) => {
+    if (currentLevel === 'L3') return;
+    
+    wordTimeout = setTimeout(() => {
+      setSpeechState(prevState => {
+        const { words, results, currentWordIndex } = prevState;
+        
+        if (wordIndex >= words.length || wordIndex !== currentWordIndex) {
+          return prevState;
+        }
+        
+        const newResults = [...results];
+        newResults[wordIndex] = "wrong";
+        
+        // Add to wrong words (only if word is longer than 2 letters)
+        if (words[wordIndex] && words[wordIndex].length > 2) {
+          setAllWrongWords(prev => [...prev, words[wordIndex]]);
+        }
+        
+        // Find next word longer than 2 letters (same as dashboard)
+        let nextIndex = wordIndex + 1;
+        while (nextIndex < words.length && words[nextIndex].length <= 2) {
+          newResults[nextIndex] = "correct";
+          nextIndex++;
+        }
+        
+        if (nextIndex < words.length) {
+          startWordTimeout(nextIndex);
+        } else {
+          // All words processed
+          setTimeout(() => {
+            finishSentence(newResults, words);
+          }, 1000);
+        }
+        
+        return {
+          ...prevState,
+          results: newResults,
+          currentWordIndex: nextIndex,
+          score: `⏰ Time's up! Expected "${words[wordIndex]}"`
+        };
+      });
+    }, levels[currentLevel].timePerWord);
+  };
+
+  const finishSentence = (results, words) => {
+    if (recognition) {
+      recognition.stop();
+    }
+    
+    const correctCount = results.filter(r => r === "correct").length;
     const accuracy = Math.round((correctCount / words.length) * 100);
     
     setSpeechState(prev => ({
       ...prev,
-      results: newResults,
-      currentWordIndex: words.length,
-      score: `${correctCount}/${words.length} words correct (${accuracy}%)`
+      recognizing: false,
+      score: `🎉 Sentence Complete: ${correctCount}/${words.length} (${accuracy}%)`
     }));
-
-    if (wrongWords.length > 0) {
-      setAllWrongWords(prev => [...prev, ...wrongWords]);
-    }
 
     const newCompletedSentences = completedSentences + 1;
     const newTotalAccuracy = ((totalAccuracy * completedSentences) + accuracy) / newCompletedSentences;
@@ -307,16 +534,19 @@ const selectStudent = (id) => {
       currentWordIndex: 0,
       results: [],
       recognizing: false,
+      canValidate: false,
       score: '',
       errorMessage: ''
     });
-  };
-
-  const backToStudentSelection = () => {
-    setSelectedStudentId(null);
-    setStudentInfo(null);
-    setAvailableTasks([]);
-    setChallengeState('student_selection');
+    
+    // Cleanup
+    if (recognition) {
+      recognition.stop();
+    }
+    if (wordTimeout) {
+      clearTimeout(wordTimeout);
+      wordTimeout = null;
+    }
   };
 
   const getLevelColor = (level) => {
@@ -336,52 +566,6 @@ const selectStudent = (id) => {
       default: return '🌱';
     }
   };
-
-  // Student Selection View
-  if (challengeState === 'student_selection') {
-    return (
-      <div className="daily-challenge-container">
-        <div className="practice-header">
-          <button className="back-btn" onClick={selectedStudentId ? backToStudentSelection : onBack}>
-            ← Back to {selectedStudentId ? 'Student Selection' : 'Dashboard'}
-          </button>
-          <h2>🏆 Daily Challenge</h2>
-        </div>
-
-        <div className="student-selection">
-          <h3>Select a Student:</h3>
-          
-          {students.length > 0 ? (
-            <div className="students-grid">
-              {students.map(student => (
-                <div key={student.id} className="student-card">
-                  <div className="student-info">
-                    <h4>👤 {student.name}</h4>
-                    <p>Class: {student.class_name || 'No Class'} {student.section ? `- ${student.section}` : ''}</p>
-                    <p>School: {student.school || 'Not specified'}</p>
-                    <div className="student-stats">
-                      <span className="stat">⭐ {student.stars || 0} stars</span>
-                      <span className="stat">📊 Level: {student.level || 'beginner'}</span>
-                    </div>
-                  </div>
-                  <button 
-                    className="select-student-btn"
-                    onClick={() => selectStudent(student.id)}
-                  >
-                    Select Student
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="no-students">
-              <p>No students found in the database.</p>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   // Loading View
   if (challengeState === 'loading') {
@@ -423,6 +607,26 @@ const selectStudent = (id) => {
             </div>
           )}
         </div>
+
+        {/* Level Selector */}
+        <div className="level-selector-container">
+          <label htmlFor="levelSelect">Choose Reading Level:</label>
+          <select 
+            id="levelSelect" 
+            value={currentLevel}
+            onChange={(e) => setCurrentLevel(e.target.value)}
+          >
+            <option value="L1">Beginner (5s per word)</option>
+            <option value="L2">Advance (3s per word)</option>
+            <option value="L3">Expert (Full Sentence)</option>
+          </select>
+        </div>
+
+        {isMobile && (
+          <div className="mobile-instructions">
+            📱 <strong>Mobile Users:</strong> For Expert level, speak all words continuously after clicking start!
+          </div>
+        )}
 
         <div className="challenges-section">
           <h3>Available Challenges:</h3>
@@ -479,6 +683,9 @@ const selectStudent = (id) => {
                       <div className="challenge-sentences">
                         <span>{task.sentences?.length || 0} sentences to read</span>
                       </div>
+                      <div className="selected-level">
+                        <span>Selected Level: {levels[currentLevel].name}</span>
+                      </div>
                     </div>
 
                     <div className="challenge-actions">
@@ -515,6 +722,21 @@ const selectStudent = (id) => {
 
   // Active Challenge View
   if (challengeState === 'active') {
+    // Add null check for selectedTask
+    if (!selectedTask || !selectedTask.sentences || selectedTask.sentences.length === 0) {
+      return (
+        <div className="daily-challenge-container">
+          <div className="challenge-header">
+            <button className="back-btn" onClick={() => setChallengeState('menu')}>← Back to Menu</button>
+            <h2>🏆 Challenge Error</h2>
+          </div>
+          <div className="error-message">
+            <p>Challenge data is not available. Please try again.</p>
+          </div>
+        </div>
+      );
+    }
+
     const progress = (completedSentences / selectedTask.sentences.length) * 100;
     
     return (
@@ -522,6 +744,11 @@ const selectStudent = (id) => {
         <div className="challenge-header">
           <button className="back-btn" onClick={() => setChallengeState('menu')}>← Back to Menu</button>
           <h2>🏆 {selectedTask.title}</h2>
+        </div>
+
+        <div className="level-info">
+          <span>Level: {levels[currentLevel].name}</span>
+          {currentLevel === 'L3' && <span className="expert-note">Speak entire sentence</span>}
         </div>
 
         <div className="challenge-progress">
@@ -572,11 +799,16 @@ const selectStudent = (id) => {
 
         <div className="practice-controls">
           <button 
-            className="start-button"
-            onClick={() => window.startChallengeRecognition && window.startChallengeRecognition()}
-            disabled={speechState.recognizing}
+            className={`start-button ${speechState.recognizing ? 'stop-btn' : ''}`}
+            onClick={() => {
+              if (speechState.recognizing) {
+                window.stopChallengeRecognition && window.stopChallengeRecognition();
+              } else {
+                window.startChallengeRecognition && window.startChallengeRecognition();
+              }
+            }}
           >
-            {speechState.recognizing ? '🎤 Listening...' : '🎤 Start Reading'}
+            {speechState.recognizing ? '🛑 Stop' : '🎤 Start Reading'}
           </button>
         </div>
       </div>
@@ -613,6 +845,10 @@ const selectStudent = (id) => {
                 <Star className="star-icon" />
                 {earnedStars}
               </span>
+            </div>
+            <div className="result-stat">
+              <span className="stat-label">Level Used</span>
+              <span className="stat-value">{levels[currentLevel].name}</span>
             </div>
           </div>
 

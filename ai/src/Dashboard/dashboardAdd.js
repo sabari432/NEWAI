@@ -302,26 +302,22 @@ const ReadingPalApp = () => {
           <div className="header-nav">
             <div className="logo-section">
               <div className="logo-icon">
-                <span className="logo-text">RP</span>
+                <span className="logo-text" style={{ fontWeight: 'bold', fontSize: '20px', color: '#fff', backgroundColor: '#14db60ff', padding: '4px 8px', borderRadius: '4px' }}>Read</span>
               </div>
-              <span className="app-title">ReadingPal</span>
             </div>
 
             <div className="header-right">
-              <button className="settings-btn">
-                <Settings className="icon-size" />
-              </button>
-
+            
               <button
                 className="settings-btn"
                 onClick={() => setShowAdminLogin(true)}
               >
-                <span style={{ fontWeight: 'bold', fontSize: '14px' }}>Admin</span>
+                <span style={{ fontWeight: 'bold', fontSize: '20px', color: '#fff', backgroundColor: '#ff0000ff', padding: '4px 8px', borderRadius: '4px' }}>Admin</span>
               </button>
 
               <div className="user-info">
-                <User className="icon-size user-icon" />
-                <span className="user-email">
+                <User className="icon-size user-icon" style={{ width: '32px', height: '32px' }} color="white" />
+                <span className="user-email" style={{ color: '#fff', fontSize: '20px'}}>
                   {currentUser?.email || 'Loading...'}
                 </span>
               </div>
@@ -330,8 +326,8 @@ const ReadingPalApp = () => {
                 className="logout-btn"
                 onClick={handleLogout}
               >
-                <LogOut className="logout-icon" />
-                <span>Logout</span>
+                <LogOut className="logout-icon" style={{ width: '32px', height: '32px' }} color="white" />
+               
               </button>
             </div>
           </div>

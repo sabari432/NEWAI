@@ -12,7 +12,11 @@ import Register from './security/register';
 import DashboardSub from './Dashboard/dashboardsub';
 import DailyChallenge from './Dashboard/DailyChallenge';
 import AdminDashboard from './adminDashboard/AdminDashboard';
-import DailyTaskManager from './adminDashboard/DailyTaskManager'; // ✅ Add this import
+import DailyTaskManager from './adminDashboard/DailyTaskManager';
+import TeacherDashboard from './Master/admin'; // Imports the component from admin.js
+
+// ✅ CORRECTED IMPORT for App.js: Starts with './' to go into the 'Master' folder
+import TeacherDirectory from './Master/TeacherDirectory';
 
 import './App.css';
 
@@ -20,20 +24,34 @@ function App() {
   return (
     <Router>
       <Routes>
+        {/* Public Routes */}
         <Route path="/" element={<LoginPage />} />
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/dashboard/add" element={<DashboardAdd />} />
+        <Route path="/Register" element={<Register />} />
+
+        {/* Student Dashboard Routes */}
         <Route path="/dashboard/sub" element={<DashboardSub />} />
         <Route path="/readMyBook" element={<ReadMyBook />} />
         <Route path="/warmup" element={<Warmup />} />
         <Route path="/DailyChallenge" element={<DailyChallenge />} />
         <Route path="/incorrect" element={<IncorrectWordsHandler />} />
         <Route path="/upload" element={<ImageUpload />} />
-        <Route path="/Register" element={<Register />} />
-        <Route path="/admin" element={<AdminDashboard />} /> {/* ✅ Add this route */}
-        <Route path="/DailyTaskManager" element={<DailyTaskManager />} /> {/* ✅ Add this route */}
 
+        {/* Teacher Dashboard Routes */}
+        <Route path="/dashboard/add" element={<DashboardAdd />} />
 
+        {/* Admin Dashboard Routes */}
+        {/* This route points to the TeacherDashboard component (from admin.js) */}
+        <Route path="/Master/admin" element={<TeacherDashboard />} /> 
+        
+        {/* This route points to the TeacherDirectory component */}
+        <Route path="/Master/teachertable" element={<TeacherDirectory />} /> 
+        
+        {/* Other Admin-related routes */}
+        <Route path="/admin" element={<AdminDashboard />} />
+        <Route path="/DailyTaskManager" element={<DailyTaskManager />} />
+
+        {/* Fallback Route */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
