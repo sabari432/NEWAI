@@ -13,8 +13,12 @@ import DashboardSub from './Dashboard/dashboardsub';
 import DailyChallenge from './Dashboard/DailyChallenge';
 import AdminDashboard from './adminDashboard/AdminDashboard';
 import DailyTaskManager from './adminDashboard/DailyTaskManager';
-import TeacherDashboard from './Master/admin'; // Imports the component from admin.js
+import TeacherDashboard from './Master/MasterDashboard'; // Imports the component from admin.js
 
+import SchoolList from './Master/SchoolList';
+import SchoolDashboard from './Master/SchoolDashboard';
+import TeacherClasses from './Master/TeacherClasses';
+import ClassStudents from './Master/ClassStudents';
 // ✅ CORRECTED IMPORT for App.js: Starts with './' to go into the 'Master' folder
 import TeacherDirectory from './Master/TeacherDirectory';
 
@@ -49,7 +53,14 @@ function App() {
         
         {/* Other Admin-related routes */}
         <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/DailyTaskManager" element={<DailyTaskManager />} />
+
+         <Route path="./Master/SchoolList" element={<SchoolList />} />
+         <Route path="./Master/SchoolDashboard" element={<SchoolDashboard />} />
+         <Route path="/Master/TeacherClasses" element={<TeacherClasses />} />
+         <Route path="./Master/ClassStudents" element={<ClassStudents />} />
+
+
+        <Route path="/DailyTaskManager" element={<TeacherClasses />} />
 
         {/* Fallback Route */}
         <Route path="*" element={<Navigate to="/" replace />} />

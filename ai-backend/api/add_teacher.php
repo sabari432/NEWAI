@@ -27,7 +27,11 @@ try {
     // Sanitize input data
     $name = sanitizeInput($input['name']);
     $email = sanitizeInput($input['email']);
-    $password = $input['password']; // Don't sanitize password as it might remove special chars
+    $password = $input['password'] ?? $input['new_password'] ?? '';
+if (empty($password)) {
+    throw new Exception("Missing required field: password");
+}
+// Don't sanitize password as it might remove special chars
     $class_handled = isset($input['class_handled']) ? sanitizeInput($input['class_handled']) : '';
     $sections = isset($input['sections']) ? sanitizeInput($input['sections']) : '';
     $phone = isset($input['phone']) ? sanitizeInput($input['phone']) : '';

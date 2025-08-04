@@ -13,7 +13,9 @@ function TeacherDirectory() {
     phone: '',
     school_name: ''
   });
+  const [editingTeacher, setEditingTeacher] = useState(null);
   const [showModal, setShowModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -49,6 +51,14 @@ function TeacherDirectory() {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setNewTeacher(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleEditInputChange = (e) => {
+    const { name, value } = e.target;
+    setEditingTeacher(prev => ({
       ...prev,
       [name]: value
     }));
@@ -95,9 +105,52 @@ function TeacherDirectory() {
     }
   };
 
-  const handleEdit = (id) => {
-    alert(`Edit functionality for teacher ID: ${id} will be implemented soon.`);
-    // TODO: Implement edit functionality
+  const handleEdit = (teacher) => {
+    // Set the editing teacher with current data
+    setEditingTeacher({
+      id: teacher.id,
+      name: teacher.name || teacher.teacher_name || '',
+      email: teacher.email || '',
+      class_handled: teacher.class_handled || teacher.grade_level || '',
+      sections: teacher.sections || teacher.subject || '',
+      phone: teacher.phone || '',
+      school_name: teacher.school_name || '',
+      new_password: '' // Password field for optional update
+    });
+    setShowEditModal(true);
+  };
+
+  const handleUpdateTeacher = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    
+    try {
+      const response = await axios.post('http://localhost:8000/api/update_teacher.php', editingTeacher, {
+        withCredentials: true,
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log('Update response:', response.data);
+      
+      if (response.data.success) {
+        alert("Teacher updated successfully!");
+        await fetchTeachers(); // Refresh the list
+        setShowEditModal(false);
+        setEditingTeacher(null);
+        setError('');
+      } else {
+        throw new Error(response.data.message || "Update failed");
+      }
+    } catch (error) {
+      console.error("Error updating teacher:", error);
+      const errorMessage = error.response?.data?.message || error.message || "Error updating teacher. Please try again.";
+      alert(errorMessage);
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDelete = async (id) => {
@@ -131,6 +184,11 @@ function TeacherDirectory() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const closeEditModal = () => {
+    setShowEditModal(false);
+    setEditingTeacher(null);
   };
 
   return (
@@ -269,9 +327,116 @@ function TeacherDirectory() {
         </div>
       )}
 
+      {/* Modal for Edit Form */}
+      {showEditModal && editingTeacher && (
+        <div className="custom-modal-backdrop">
+          <div className="custom-modal-content">
+            <form onSubmit={handleUpdateTeacher}>
+              <div className="custom-modal-header">
+                <h5 className="custom-modal-title">Edit Teacher</h5>
+                <button 
+                  type="button" 
+                  className="custom-modal-close-button" 
+                  onClick={closeEditModal}
+                  disabled={loading}
+                >
+                  &times;
+                </button>
+              </div>
+              <div className="custom-modal-body">
+                <div className="form-grid">
+                  <input 
+                    type="text" 
+                    name="name" 
+                    placeholder="Teacher Name *" 
+                    className="form-input"
+                    value={editingTeacher.name} 
+                    onChange={handleEditInputChange} 
+                    required 
+                    disabled={loading}
+                  />
+                  <input 
+                    type="email" 
+                    name="email" 
+                    placeholder="Email *" 
+                    className="form-input"
+                    value={editingTeacher.email} 
+                    onChange={handleEditInputChange} 
+                    required 
+                    disabled={loading}
+                  />
+                  <input 
+                    type="text" 
+                    name="class_handled" 
+                    placeholder="Grade Level (e.g., Grade 5)" 
+                    className="form-input"
+                    value={editingTeacher.class_handled} 
+                    onChange={handleEditInputChange}
+                    disabled={loading}
+                  />
+                  <input 
+                    type="text" 
+                    name="sections" 
+                    placeholder="Subject (e.g., Mathematics)" 
+                    className="form-input"
+                    value={editingTeacher.sections} 
+                    onChange={handleEditInputChange}
+                    disabled={loading}
+                  />
+                  <input 
+                    type="text" 
+                    name="phone" 
+                    placeholder="Phone Number" 
+                    className="form-input"
+                    value={editingTeacher.phone} 
+                    onChange={handleEditInputChange}
+                    disabled={loading}
+                  />
+                  <input 
+                    type="text" 
+                    name="school_name" 
+                    placeholder="School Name" 
+                    className="form-input"
+                    value={editingTeacher.school_name} 
+                    onChange={handleEditInputChange}
+                    disabled={loading}
+                  />
+                  <input 
+                    type="password" 
+                    name="new_password" 
+                    placeholder="New Password (leave blank to keep current)" 
+                    className="form-input"
+                    value={editingTeacher.new_password} 
+                    onChange={handleEditInputChange}
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+              <div className="custom-modal-footer">
+                <button 
+                  type="submit" 
+                  className="custom-button primary-button"
+                  disabled={loading}
+                >
+                  {loading ? 'Updating...' : 'Update Teacher'}
+                </button>
+                <button 
+                  type="button" 
+                  className="custom-button secondary-button" 
+                  onClick={closeEditModal}
+                  disabled={loading}
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Teacher Table */}
       <div className="table-container">
-        {loading && !showModal && (
+        {loading && !showModal && !showEditModal && (
           <div className="loading-message">Loading teachers...</div>
         )}
         
@@ -299,7 +464,7 @@ function TeacherDirectory() {
                 <td>
                   <button 
                     className="action-button edit-button" 
-                    onClick={() => handleEdit(teacher.id)}
+                    onClick={() => handleEdit(teacher)}
                     disabled={loading}
                   >
                     Edit

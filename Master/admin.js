@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import './AdminDashboard.css';
-import { API_BASE_URL } from '../config';
 
 import TeacherDirectory from './TeacherDirectory';
 import TeacherCards from './Teachercards';
@@ -30,7 +29,7 @@ const RawDataModal = ({ title, data, onClose }) => (
               borderRadius: '12px',
               textAlign: 'center',
               fontWeight: '600',
-              color: '#2d3748'
+              color: '#000000'
             }}>
               Total Records: {data.length}
             </div>
@@ -72,7 +71,7 @@ const RawDataModal = ({ title, data, onClose }) => (
           <div style={{
             textAlign: 'center',
             padding: '60px 20px',
-            color: '#4a5568',
+            color: '#000000',
             fontSize: '1.1rem'
           }}>
             <div style={{ fontSize: '3rem', marginBottom: '20px' }}>📝</div>
@@ -88,7 +87,7 @@ const RawDataModal = ({ title, data, onClose }) => (
 const LoadingSpinner = () => (
   <div className="loading">
     <div className="spinner"></div>
-    <p style={{ marginTop: '20px', color: '#2d3748', fontWeight: '600' }}>
+    <p style={{ marginTop: '20px', color: '#000000', fontWeight: '600' }}>
       Loading dashboard data...
     </p>
   </div>
@@ -97,7 +96,7 @@ const LoadingSpinner = () => (
 // ✅ Floating particles for extra wow factor
 const FloatingParticles = () => (
   <>
-    {[...Array(8)].map((_, i) => (
+    {[...Array(6)].map((_, i) => (
       <div 
         key={i}
         className="floating-particle"
@@ -122,27 +121,26 @@ function TeacherDashboard() {
   const [modalTitle, setModalTitle] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [fetchingModal, setFetchingModal] = useState(false);
 
   // ✅ Enhanced fetch with better error handling
   useEffect(() => {
     const fetchStats = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`${API_BASE_URL}/getTeacherStats.php`);
+        const response = await axios.get('http://localhost:8000/api/getTeacherStats.php');
         
         // Simulate network delay for demo (remove in production)
-        await new Promise(resolve => setTimeout(resolve, 800));
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
         setStats(response.data);
         setError(null);
       } catch (err) {
         console.error('Error fetching stats:', err);
-        setError('Failed to load dashboard data. Please check your server connection.');
+        setError('Failed to load dashboard data');
         setStats({ 
-          totalStudents: 0, 
-          totalTeachers: 0, 
-          totalClasses: 0 
+          totalStudents: 'N/A', 
+          totalTeachers: 'N/A', 
+          totalClasses: 'N/A' 
         });
       } finally {
         setLoading(false);
@@ -173,32 +171,18 @@ function TeacherDashboard() {
     };
 
     try {
-      setFetchingModal(true);
-      const res = await axios.get(`${API_BASE_URL}/${endpoints[type]}`);
-      
-      // Handle different response structures
-      let dataArray = [];
-      if (res.data.success && res.data.data) {
-        dataArray = res.data.data;
-      } else if (res.data.success && res.data.classes) {
-        dataArray = res.data.classes;
-      } else if (res.data.success && res.data.students) {
-        dataArray = res.data.students;
-      } else if (Array.isArray(res.data)) {
-        dataArray = res.data;
-      } else if (res.data.success === false) {
-        throw new Error(res.data.message || 'Failed to fetch data');
+      const res = await axios.get(`http://localhost:8000/api/${endpoints[type]}`);
+      if (res.data.success) {
+        setRawData(res.data.data);
+        setModalTitle(`${icons[type]} ${titles[type]}`);
+      } else {
+        setRawData([]);
+        setModalTitle(`${icons[type]} ${titles[type]} - No Data`);
       }
-
-      setRawData(dataArray);
-      setModalTitle(`${icons[type]} ${titles[type]} (${dataArray.length} records)`);
-      
     } catch (err) {
       console.error('Error fetching raw data:', err);
       setRawData([]);
-      setModalTitle(`${icons[type]} ${titles[type]} - Error: ${err.message}`);
-    } finally {
-      setFetchingModal(false);
+      setModalTitle(`${icons[type]} ${titles[type]} - Error`);
     }
   };
 
@@ -219,46 +203,26 @@ function TeacherDashboard() {
         <FloatingParticles />
         <div className="error-message">
           <div style={{ fontSize: '3rem', marginBottom: '20px' }}>⚠️</div>
-          <h3 style={{ color: '#2d3748', marginBottom: '15px' }}>Oops! Something went wrong</h3>
-          <p style={{ color: '#4a5568', marginBottom: '20px' }}>{error}</p>
-          <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button 
-              onClick={() => window.location.reload()}
-              style={{
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                color: 'white',
-                border: 'none',
-                padding: '12px 24px',
-                borderRadius: '25px',
-                cursor: 'pointer',
-                fontWeight: '600',
-                transition: 'all 0.3s ease',
-                boxShadow: '0 4px 15px rgba(102, 126, 234, 0.4)'
-              }}
-              onMouseOver={(e) => e.target.style.transform = 'scale(1.05)'}
-              onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
-            >
-              🔄 Retry Loading
-            </button>
-            <button 
-              onClick={() => setError(null)}
-              style={{
-                background: 'rgba(255, 255, 255, 0.2)',
-                color: '#2d3748',
-                border: '2px solid rgba(255, 255, 255, 0.3)',
-                padding: '12px 24px',
-                borderRadius: '25px',
-                cursor: 'pointer',
-                fontWeight: '600',
-                transition: 'all 0.3s ease',
-                backdropFilter: 'blur(10px)'
-              }}
-              onMouseOver={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.3)'}
-              onMouseOut={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.2)'}
-            >
-              ✨ Continue Anyway
-            </button>
-          </div>
+          <h3 style={{ color: '#000000' }}>Oops! Something went wrong</h3>
+          <p style={{ color: '#000000' }}>{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            style={{
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: '#000000',
+              border: 'none',
+              padding: '12px 24px',
+              borderRadius: '25px',
+              cursor: 'pointer',
+              fontWeight: '600',
+              marginTop: '15px',
+              transition: 'all 0.3s ease'
+            }}
+            onMouseOver={(e) => e.target.style.transform = 'scale(1.05)'}
+            onMouseOut={(e) => e.target.style.transform = 'scale(1)'}
+          >
+            Retry Loading
+          </button>
         </div>
       </div>
     );
@@ -270,82 +234,48 @@ function TeacherDashboard() {
       
       {/* ✅ Enhanced Title with animated subtitle */}
       <div style={{ textAlign: 'center', marginBottom: '50px' }}>
-        <h1 style={{ 
-          color: '#2d3748',
-          fontSize: '3rem',
-          fontWeight: '800',
-          margin: '0 0 10px 0',
-          textShadow: '0 4px 20px rgba(0,0,0,0.3)',
-          background: 'linear-gradient(135deg, #2d3748 0%, #4a5568 100%)',
-          WebkitBackgroundClip: 'text',
-          WebkitTextFillColor: 'transparent',
-          backgroundClip: 'text'
-        }}>
+        <h2 style={{ color: '#000000' }}>
           🚀 Master Dashboard
-        </h1>
+        </h2>
         <p style={{
-          fontSize: '1.3rem',
-          color: '#4a5568',
+          fontSize: '1.2rem',
+          color: '#000000',
           fontWeight: '500',
           margin: '0',
-          textShadow: '0 2px 10px rgba(0,0,0,0.2)'
+          textShadow: '0 2px 4px rgba(0,0,0,0.3)'
         }}>
-          Real-time Analytics & Educational Insights
+          Real-time Analytics & Insights
         </p>
       </div>
 
-      {/* ✅ Modern Summary Overview */}
-      <div className="summary-overview" style={{
-        background: 'rgba(255, 255, 255, 0.15)',
-        backdropFilter: 'blur(20px)',
-        borderRadius: '24px',
-        padding: '30px',
-        margin: '40px auto',
-        maxWidth: '1000px',
-        border: '1px solid rgba(255, 255, 255, 0.2)',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
-        textAlign: 'center'
-      }}>
-        <h3 style={{ color: '#2d3748', marginBottom: '25px', fontSize: '1.5rem' }}>
-          📈 Quick Overview
-        </h3>
-        <div className="combined-card">
-          <div className="card-item" style={{ animationDelay: '0.1s', animation: 'fadeInUp 0.6s ease forwards' }}>
-            <div>
-              <span style={{ marginRight: '8px' }}>🎓</span>
-              Total Classes
-            </div>
-            <div>{stats.totalClasses || 0}</div>
+      {/* ✅ Ultra Modern Combined Summary Cards */}
+      <div className="combined-card">
+        <div className="card-item" style={{ animationDelay: '0.1s', animation: 'fadeInUp 0.6s ease forwards' }}>
+          <div>
+            <span style={{ marginRight: '8px' }}>🎓</span>
+            Total Classes
           </div>
-          
-          <div className="card-item" style={{ animationDelay: '0.2s', animation: 'fadeInUp 0.6s ease forwards' }}>
-            <div>
-              <span style={{ marginRight: '8px' }}>👥</span>
-              Total Students
-            </div>
-            <div>{stats.totalStudents || 0}</div>
+          <div>{stats.totalClasses || 0}</div>
+        </div>
+        
+        <div className="card-item" style={{ animationDelay: '0.2s', animation: 'fadeInUp 0.6s ease forwards' }}>
+          <div>
+            <span style={{ marginRight: '8px' }}>👥</span>
+            Total Students
           </div>
-          
-          <div className="card-item" style={{ animationDelay: '0.3s', animation: 'fadeInUp 0.6s ease forwards' }}>
-            <div>
-              <span style={{ marginRight: '8px' }}>👨‍🏫</span>
-              Total Teachers
-            </div>
-            <div>{stats.totalTeachers || 0}</div>
+          <div>{stats.totalStudents || 0}</div>
+        </div>
+        
+        <div className="card-item" style={{ animationDelay: '0.3s', animation: 'fadeInUp 0.6s ease forwards' }}>
+          <div>
+            <span style={{ marginRight: '8px' }}>👨‍🏫</span>
+            Total Teachers
           </div>
+          <div>{stats.totalTeachers || 0}</div>
         </div>
       </div>
 
       {/* ✅ Individual Clickable Cards with enhanced interactions */}
-      <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-        <h3 style={{ color: '#2d3748', fontSize: '1.8rem', fontWeight: '700' }}>
-          📋 Detailed Analytics
-        </h3>
-        <p style={{ color: '#4a5568', fontSize: '1.1rem' }}>
-          Click on any card below to view comprehensive data
-        </p>
-      </div>
-
       <div className="card-container">
         <div 
           className="card clickable" 
@@ -353,42 +283,23 @@ function TeacherDashboard() {
           style={{ 
             animationDelay: '0.4s', 
             animation: 'fadeInUp 0.6s ease forwards',
-            opacity: 0,
-            position: 'relative'
+            opacity: 0
           }}
         >
-          {fetchingModal && (
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(255, 255, 255, 0.9)',
-              borderRadius: '24px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10
-            }}>
-              <div className="spinner" style={{ width: '30px', height: '30px' }}></div>
-            </div>
-          )}
           <div className="card-title">
-            <span style={{ marginRight: '10px', fontSize: '2rem' }}>🎓</span>
-            Classes Management
+            <span style={{ marginRight: '10px', fontSize: '1.5rem' }}>🎓</span>
+            Total Classes
           </div>
           <div className="card-text">{stats.totalClasses}</div>
           <div style={{
             position: 'absolute',
             bottom: '15px',
             right: '20px',
-            color: '#4a5568',
-            fontSize: '0.85rem',
-            fontWeight: '600',
-            opacity: 0.8
+            color: '#000000',
+            fontSize: '0.8rem',
+            fontWeight: '500'
           }}>
-            View Details →
+            Click for details →
           </div>
         </div>
 
@@ -398,42 +309,23 @@ function TeacherDashboard() {
           style={{ 
             animationDelay: '0.5s', 
             animation: 'fadeInUp 0.6s ease forwards',
-            opacity: 0,
-            position: 'relative'
+            opacity: 0
           }}
         >
-          {fetchingModal && (
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(255, 255, 255, 0.9)',
-              borderRadius: '24px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10
-            }}>
-              <div className="spinner" style={{ width: '30px', height: '30px' }}></div>
-            </div>
-          )}
           <div className="card-title">
-            <span style={{ marginRight: '10px', fontSize: '2rem' }}>👥</span>
-            Student Records
+            <span style={{ marginRight: '10px', fontSize: '1.5rem' }}>👥</span>
+            Total Students
           </div>
           <div className="card-text">{stats.totalStudents}</div>
           <div style={{
             position: 'absolute',
             bottom: '15px',
             right: '20px',
-            color: '#4a5568',
-            fontSize: '0.85rem',
-            fontWeight: '600',
-            opacity: 0.8
+            color: '#000000',
+            fontSize: '0.8rem',
+            fontWeight: '500'
           }}>
-            View Details →
+            Click for details →
           </div>
         </div>
 
@@ -443,42 +335,23 @@ function TeacherDashboard() {
           style={{ 
             animationDelay: '0.6s', 
             animation: 'fadeInUp 0.6s ease forwards',
-            opacity: 0,
-            position: 'relative'
+            opacity: 0
           }}
         >
-          {fetchingModal && (
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-              background: 'rgba(255, 255, 255, 0.9)',
-              borderRadius: '24px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 10
-            }}>
-              <div className="spinner" style={{ width: '30px', height: '30px' }}></div>
-            </div>
-          )}
           <div className="card-title">
-            <span style={{ marginRight: '10px', fontSize: '2rem' }}>👨‍🏫</span>
-            Teacher Directory
+            <span style={{ marginRight: '10px', fontSize: '1.5rem' }}>👨‍🏫</span>
+            Total Teachers
           </div>
           <div className="card-text">{stats.totalTeachers}</div>
           <div style={{
             position: 'absolute',
             bottom: '15px',
             right: '20px',
-            color: '#4a5568',
-            fontSize: '0.85rem',
-            fontWeight: '600',
-            opacity: 0.8
+            color: '#000000',
+            fontSize: '0.8rem',
+            fontWeight: '500'
           }}>
-            View Details →
+            Click for details →
           </div>
         </div>
       </div>
@@ -509,13 +382,13 @@ function TeacherDashboard() {
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)'
         }}>
           <h3 style={{
-            color: '#2d3748',
+            color: '#000000',
             marginBottom: '20px',
             textAlign: 'center',
             fontSize: '1.5rem',
             fontWeight: '700'
           }}>
-            👨‍🏫 Teacher Management
+
           </h3>
           <TeacherDirectory />
         </div>
@@ -537,45 +410,38 @@ function TeacherDashboard() {
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)'
         }}>
           <h3 style={{
-            color: '#2d3748',
+            color: '#000000',
             marginBottom: '20px',
             textAlign: 'center',
             fontSize: '1.5rem',
             fontWeight: '700'
           }}>
-            📊 Teacher Performance Cards
           </h3>
           <TeacherCards />
         </div>
       </div>
 
       {/* ✅ Footer with additional info */}
-      <div style={{
+      {/* <div style={{
         marginTop: '60px',
         textAlign: 'center',
-        color: '#4a5568',
+        color: '#000000',
         fontSize: '0.9rem',
         fontWeight: '500'
       }}>
+        <p>Dashboard last updated: {new Date().toLocaleString()}</p>
         <div style={{ 
           marginTop: '20px',
-          padding: '20px',
+          padding: '15px',
           background: 'rgba(255, 255, 255, 0.1)',
-          borderRadius: '16px',
-          backdropFilter: 'blur(10px)',
-          border: '1px solid rgba(255, 255, 255, 0.2)'
+          borderRadius: '12px',
+          backdropFilter: 'blur(10px)'
         }}>
-          <p style={{ margin: '0 0 10px 0', color: '#2d3748', fontWeight: '600' }}>
-            💡 Dashboard Features
-          </p>
-          <p style={{ margin: '0', color: '#4a5568', fontSize: '0.85rem' }}>
-            Click on cards to view detailed data • Real-time statistics • Responsive design
-          </p>
-          <p style={{ margin: '10px 0 0 0', color: '#4a5568', fontSize: '0.8rem' }}>
-            Last updated: {new Date().toLocaleString()}
+          <p style={{ margin: '0', color: '#000000' }}>
+            💡 Click on any card above to view detailed information
           </p>
         </div>
-      </div>
+      </div> */}
     </div>
   );
 }
@@ -604,21 +470,6 @@ const additionalStyles = `
 
   .card-item:hover {
     animation: pulse 0.6s ease-in-out;
-  }
-
-  .summary-overview {
-    animation: slideInFromTop 0.8s ease forwards;
-  }
-
-  @keyframes slideInFromTop {
-    from {
-      opacity: 0;
-      transform: translateY(-50px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
   }
 `;
 
